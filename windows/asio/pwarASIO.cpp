@@ -1,8 +1,16 @@
+#include <winsock2.h>
+#include <ws2tcpip.h>
+#define WIN32_LEAN_AND_MEAN
+#include <windows.h>
+#include <mmsystem.h>
+#include <thread>
+#include <mutex>
 #include <stdio.h>
 #include <string.h>
 #include "pwarASIO.h"
 #include "pwarASIOLog.h"
-//#include "virtape.h"
+#include "../../protocol/pwar_packet.h"
+#pragma comment(lib, "ws2_32.lib")
 
 //------------------------------------------------------------------------------------------
 
@@ -10,6 +18,9 @@
 void getNanoSeconds(ASIOTimeStamp *time);
 
 // local
+
+void startUdpListener();
+void stopUdpListener();
 
 double AsioSamples2double (ASIOSamples* samples);
 
@@ -20,8 +31,6 @@ static const double twoRaisedTo32Reciprocal = 1. / twoRaisedTo32;
 // on windows, we do the COM stuff.
 
 #if WINDOWS
-#include "windows.h"
-#include "mmsystem.h"
 
 // class id. !!! NOTE: !!! you will obviously have to create your own class id!
 // {188135E1-D565-11d2-854F-00A0C99F5D19}
@@ -96,17 +105,8 @@ HRESULT _stdcall DllUnregisterServer()
 //------------------------------------------------------------------------------------------
 pwarASIO::pwarASIO (LPUNKNOWN pUnk, HRESULT *phr)
 	: CUnknown("PWARASIO", pUnk, phr)
-
-//------------------------------------------------------------------------------------------
-
-#else
-
-// when not on windows, we derive from AsioDriver
-pwarASIO::pwarASIO () : AsioDriver ()
-
-#endif
 {
-	pwarASIOLog logger("10.0.0.171", 1338);
+    pwarASIOLog logger("10.0.0.171", 1338);
 	long i;
 
 	blockFrames = kBlockFrames;
@@ -137,11 +137,13 @@ pwarASIO::pwarASIO () : AsioDriver ()
 	callbacks = 0;
 	activeInputs = activeOutputs = 0;
 	toggle = 0;
+    startUdpListener();
 }
 
 //------------------------------------------------------------------------------------------
 pwarASIO::~pwarASIO ()
 {
+    stopUdpListener();
 	stop ();
 	outputClose ();
 	inputClose ();
@@ -616,4 +618,89 @@ double AsioSamples2double (ASIOSamples* samples)
 		a += (double)(samples->hi) * twoRaisedTo32;
 	return a;
 }
+
+//---------------------------------------------------------------------------------------------
+
+static std::thread udpListenerThread;
+static bool udpListenerRunning = false;
+
+void udp_packet_listener() {
+    WSADATA wsaData;
+    SOCKET sockfd;
+    struct sockaddr_in servaddr, cliaddr;
+    int n;
+    socklen_t len;
+    char buffer[2048];
+
+    if (WSAStartup(MAKEWORD(2,2), &wsaData) != 0) {
+        printf("WSAStartup failed\n");
+        return;
+    }
+
+    sockfd = socket(AF_INET, SOCK_DGRAM, 0);
+    if (sockfd == INVALID_SOCKET) {
+        printf("Socket creation failed\n");
+        WSACleanup();
+        return;
+    }
+
+    memset(&servaddr, 0, sizeof(servaddr));
+    servaddr.sin_family = AF_INET;
+    servaddr.sin_addr.s_addr = INADDR_ANY;
+    servaddr.sin_port = htons(8321);
+
+    if (bind(sockfd, (struct sockaddr*)&servaddr, sizeof(servaddr)) == SOCKET_ERROR) {
+        printf("Bind failed\n");
+        closesocket(sockfd);
+        WSACleanup();
+        return;
+    }
+
+    printf("UDP listener started on port 8321\n");
+    udpListenerRunning = true;
+    while (udpListenerRunning) {
+        len = sizeof(cliaddr);
+        n = recvfrom(sockfd, buffer, sizeof(buffer), 0, (struct sockaddr*)&cliaddr, &len);
+        if (n > 0) {
+            if (n >= sizeof(rt_stream_packet_t)) {
+                rt_stream_packet_t pkt;
+                memcpy(&pkt, buffer, sizeof(rt_stream_packet_t));
+                char logMsg[512];
+                snprintf(logMsg, sizeof(logMsg), "rt_stream_packet_t: n_samples=%u, seq=%llu, timestamp=%llu", pkt.n_samples, (unsigned long long)pkt.seq, (unsigned long long)pkt.timestamp);
+                pwarASIOLog::Send(logMsg);
+                // Log all samples
+                char sampleMsg[2048];
+                int offset = 0;
+                for (uint16_t i = 0; i < pkt.n_samples && i < RT_STREAM_PACKET_FRAME_SIZE; ++i) {
+                    int written = snprintf(sampleMsg + offset, sizeof(sampleMsg) - offset, "%d%s", pkt.samples[i], (i < pkt.n_samples - 1) ? "," : "");
+                    if (written < 0 || offset + written >= (int)sizeof(sampleMsg)) break;
+                    offset += written;
+                }
+                sampleMsg[offset] = '\0';
+                pwarASIOLog::Send(sampleMsg);
+            } else {
+                char logMsg[128];
+                snprintf(logMsg, sizeof(logMsg), "Received packet too small for rt_stream_packet_t (%d bytes)", n);
+                pwarASIOLog::Send(logMsg);
+            }
+        }
+    }
+    closesocket(sockfd);
+    WSACleanup();
+}
+
+void startUdpListener() {
+    if (!udpListenerRunning) {
+        udpListenerThread = std::thread(udp_packet_listener);
+    }
+}
+
+void stopUdpListener() {
+    udpListenerRunning = false;
+    if (udpListenerThread.joinable()) {
+        udpListenerThread.join();
+    }
+}
+
+#endif // WINDOWS
 
