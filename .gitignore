@@ -1,2 +1,4 @@
 build/
 third_party/asiosdk
+.ccls-cache/
+linux/_out
