@@ -16,7 +16,7 @@
 #include "pwar_packet.h"
 
 //#define STREAM_IP "127.0.0.1"
-#define STREAM_IP "100.100.250.30"
+#define STREAM_IP "10.0.0.161"
 #define STREAM_PORT 8321
 
 #define SAMPLE_RATE 48000
