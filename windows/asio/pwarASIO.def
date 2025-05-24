@@ -1,0 +1,9 @@
+LIBRARY			pwarASIO
+DESCRIPTION		'ASIO Sample Driver'
+PROTMODE
+EXPORTS	
+				DllMain
+				DllGetClassObject
+				DllCanUnloadNow
+				DllRegisterServer
+				DllUnregisterServer
