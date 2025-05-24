@@ -19,9 +19,6 @@ void getNanoSeconds(ASIOTimeStamp *time);
 
 // local
 
-void startUdpListener();
-void stopUdpListener();
-
 double AsioSamples2double (ASIOSamples* samples);
 
 static const double twoRaisedTo32 = 4294967296.;
@@ -621,10 +618,7 @@ double AsioSamples2double (ASIOSamples* samples)
 
 //---------------------------------------------------------------------------------------------
 
-static std::thread udpListenerThread;
-static bool udpListenerRunning = false;
-
-void udp_packet_listener() {
+void pwarASIO::udp_packet_listener() {
     WSADATA wsaData;
     SOCKET sockfd;
     struct sockaddr_in servaddr, cliaddr;
@@ -678,6 +672,8 @@ void udp_packet_listener() {
                 }
                 sampleMsg[offset] = '\0';
                 pwarASIOLog::Send(sampleMsg);
+                // Example: call a class method here if needed
+                // this->processPacket(pkt);
             } else {
                 char logMsg[128];
                 snprintf(logMsg, sizeof(logMsg), "Received packet too small for rt_stream_packet_t (%d bytes)", n);
@@ -689,13 +685,14 @@ void udp_packet_listener() {
     WSACleanup();
 }
 
-void startUdpListener() {
+void pwarASIO::startUdpListener() {
     if (!udpListenerRunning) {
-        udpListenerThread = std::thread(udp_packet_listener);
+        udpListenerRunning = true;
+        udpListenerThread = std::thread(&pwarASIO::udp_packet_listener, this);
     }
 }
 
-void stopUdpListener() {
+void pwarASIO::stopUdpListener() {
     udpListenerRunning = false;
     if (udpListenerThread.joinable()) {
         udpListenerThread.join();

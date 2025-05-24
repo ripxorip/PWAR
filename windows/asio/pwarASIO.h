@@ -2,6 +2,7 @@
 #define _asiosmpl_
 
 #include "asiosys.h"
+#include <thread>
 
 #define TESTWAVES 1
 // when true, will feed the left input (to host) with
@@ -133,6 +134,12 @@ friend void myTimer();
 	bool active, started;
 	bool timeInfoMode, tcRead;
 	char errorMessage[128];
+
+    std::thread udpListenerThread;
+    bool udpListenerRunning = false;
+    void udp_packet_listener();
+    void startUdpListener();
+    void stopUdpListener();
 };
 
 #endif
