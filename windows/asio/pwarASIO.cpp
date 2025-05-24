@@ -196,7 +196,7 @@ ASIOError pwarASIO::start ()
 		samplePosition = 0;
 		theSystemTime.lo = theSystemTime.hi = 0;
 		toggle = 0;
-		timerOn (); // activate 'hardware'
+		//timerOn (); // activate 'hardware'
 		started = true;
 		return ASE_OK;
 	}
@@ -586,6 +586,50 @@ void pwarASIO::bufferSwitch ()
 	}
 }
 
+// This will need to be properly thought out, not just with some AI BS code.
+// Anyways, I could still see some waveforms in Reaper, so it seems to work
+// on some level.
+void pwarASIO::switchBuffersFromPwarPacket(const rt_stream_packet_t& packet)
+{
+    constexpr size_t MAX_SAMPLES = RT_STREAM_PACKET_FRAME_SIZE;
+    for (long i = 0; i < activeInputs; i++)
+    {
+        short* dest = inputBuffers[i];
+        long offset = inMap[i] * blockFrames;
+        size_t available = (offset < MAX_SAMPLES) ? (MAX_SAMPLES - offset) : 0;
+        size_t to_copy = (blockFrames < available) ? blockFrames : available;
+        for (size_t j = 0; j < to_copy; ++j)
+        {
+            uint16_t s = packet.samples[offset + j];
+            dest[j] = (short)((int)s - 32768);
+        }
+        // Zero the rest if not enough samples
+        for (size_t j = to_copy; j < blockFrames; ++j)
+            dest[j] = 0;
+    }
+    for (long i = 0; i < activeOutputs; i++)
+    {
+        short* dest = outputBuffers[i];
+        long offset = outMap[i] * blockFrames;
+        size_t available = (offset < MAX_SAMPLES) ? (MAX_SAMPLES - offset) : 0;
+        size_t to_copy = (blockFrames < available) ? blockFrames : available;
+        for (size_t j = 0; j < to_copy; ++j)
+        {
+            uint16_t s = packet.samples[offset + j];
+            dest[j] = (short)((int)s - 32768);
+        }
+        for (size_t j = to_copy; j < blockFrames; ++j)
+            dest[j] = 0;
+    }
+
+	samplePosition += blockFrames;
+	if (timeInfoMode)
+		bufferSwitchX ();
+	else
+		callbacks->bufferSwitch (toggle, ASIOFalse);
+	toggle = toggle ? 0 : 1;
+}
+
 //---------------------------------------------------------------------------------------------
 // asio2 buffer switch
 void pwarASIO::bufferSwitchX ()
@@ -670,6 +714,7 @@ void pwarASIO::udp_packet_listener() {
                     if (written < 0 || offset + written >= (int)sizeof(sampleMsg)) break;
                     offset += written;
                 }
+				switchBuffersFromPwarPacket(pkt);
                 sampleMsg[offset] = '\0';
                 pwarASIOLog::Send(sampleMsg);
                 // Example: call a class method here if needed

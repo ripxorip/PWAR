@@ -3,6 +3,7 @@
 
 #include "asiosys.h"
 #include <thread>
+#include "../../protocol/pwar_packet.h"
 
 #define TESTWAVES 1
 // when true, will feed the left input (to host) with
@@ -140,6 +141,7 @@ friend void myTimer();
     void udp_packet_listener();
     void startUdpListener();
     void stopUdpListener();
+	void switchBuffersFromPwarPacket(const rt_stream_packet_t &packet);
 };
 
 #endif
