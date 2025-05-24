@@ -1,6 +1,7 @@
 #include <stdio.h>
 #include <string.h>
 #include "pwarASIO.h"
+#include "pwarASIOLog.h"
 //#include "virtape.h"
 
 //------------------------------------------------------------------------------------------
@@ -105,6 +106,7 @@ pwarASIO::pwarASIO () : AsioDriver ()
 
 #endif
 {
+	pwarASIOLog logger("10.0.0.171", 1338);
 	long i;
 
 	blockFrames = kBlockFrames;
@@ -150,6 +152,7 @@ pwarASIO::~pwarASIO ()
 void pwarASIO::getDriverName (char *name)
 {
 	strcpy (name, "Sample ASIO");
+    pwarASIOLog::Send("pwarASIO::getDriverName called");
 }
 
 //------------------------------------------------------------------------------------------
