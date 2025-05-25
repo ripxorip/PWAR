@@ -59,16 +59,7 @@ void setup_socket()
     internal.servaddr.sin_addr.s_addr = inet_addr(STREAM_IP);
 }
 
-static void convert_buffer(float *input, uint16_t *output, uint32_t n_samples)
-{
-    for (uint32_t i = 0; i < n_samples; i++)
-    {
-        float sample = input[i];
-        output[i] = (uint16_t)((sample) * 32767.5f);
-    }
-}
-
-static void stream_buffer(uint16_t *samples, uint32_t n_samples)
+static void stream_buffer(float *samples, uint32_t n_samples)
 {
     rt_stream_packet_t packet;
 
@@ -76,7 +67,7 @@ static void stream_buffer(uint16_t *samples, uint32_t n_samples)
     internal.seq += 1;
 
     packet.n_samples = n_samples;
-    memcpy(packet.samples, samples, n_samples * sizeof(uint16_t));
+    memcpy(packet.samples, samples, n_samples * sizeof(float));
 
     struct timespec ts;
     clock_gettime(CLOCK_MONOTONIC, &ts);
@@ -126,7 +117,6 @@ static void on_process(void *userdata)
     static int count = 0;
 
     static float fbuf[RT_STREAM_PACKET_FRAME_SIZE];
-    static uint16_t sbuf[RT_STREAM_PACKET_FRAME_SIZE];
 
     if ((b = pw_stream_dequeue_buffer(data->stream)) == NULL)
     {
@@ -190,8 +180,7 @@ static void on_process(void *userdata)
 
     if (count == RT_STREAM_PACKET_FRAME_SIZE)
     {
-        convert_buffer(fbuf, sbuf, RT_STREAM_PACKET_FRAME_SIZE);
-        stream_buffer(sbuf, RT_STREAM_PACKET_FRAME_SIZE);
+        stream_buffer(fbuf, RT_STREAM_PACKET_FRAME_SIZE);
         count = 0;
     }
 
