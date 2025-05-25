@@ -99,8 +99,8 @@ friend void myTimer();
 
 	bool inputOpen ();
 #if TESTWAVES
-	void makeSine (short *wave);
-	void makeSaw (short *wave);
+	void makeSine (float *wave);
+	void makeSaw (float *wave);
 #endif
 	void inputClose ();
 	void input ();
@@ -118,10 +118,10 @@ friend void myTimer();
 	ASIOCallbacks *callbacks;
 	ASIOTime asioTime;
 	ASIOTimeStamp theSystemTime;
-	short *inputBuffers[kNumInputs * 2];
-	short *outputBuffers[kNumOutputs * 2];
+	float *inputBuffers[kNumInputs * 2];
+	float *outputBuffers[kNumOutputs * 2];
 #if TESTWAVES
-	short *sineWave, *sawTooth;
+    float *sineWave, *sawTooth;
 #endif
 	long inMap[kNumInputs];
 	long outMap[kNumOutputs];

@@ -316,7 +316,7 @@ ASIOError pwarASIO::getChannelInfo (ASIOChannelInfo *info)
 	if (info->channel < 0 || (info->isInput ? info->channel >= kNumInputs : info->channel >= kNumOutputs))
 		return ASE_InvalidParameter;
 #if WINDOWS
-	info->type = ASIOSTInt16LSB;
+	info->type = ASIOSTFloat32LSB;
 #else
 	info->type = ASIOSTInt16MSB;
 #endif
@@ -351,101 +351,101 @@ ASIOError pwarASIO::getChannelInfo (ASIOChannelInfo *info)
 
 //------------------------------------------------------------------------------------------
 ASIOError pwarASIO::createBuffers (ASIOBufferInfo *bufferInfos, long numChannels,
-	long bufferSize, ASIOCallbacks *callbacks)
+    long bufferSize, ASIOCallbacks *callbacks)
 {
-	ASIOBufferInfo *info = bufferInfos;
-	long i;
-	bool notEnoughMem = false;
-	activeInputs = 0;
-	activeOutputs = 0;
-	blockFrames = bufferSize;
-	for (i = 0; i < numChannels; i++, info++)
-	{
-		if (info->isInput)
-		{
-			if (info->channelNum < 0 || info->channelNum >= kNumInputs)
-				goto error;
-			inMap[activeInputs] = info->channelNum;
-			inputBuffers[activeInputs] = new short[blockFrames * 2]; // double buffer
-			if (inputBuffers[activeInputs])
-			{
-				info->buffers[0] = inputBuffers[activeInputs];
-				info->buffers[1] = inputBuffers[activeInputs] + blockFrames;
-			}
-			else
-			{
-				info->buffers[0] = info->buffers[1] = 0;
-				notEnoughMem = true;
-			}
-			activeInputs++;
-			if (activeInputs > kNumInputs)
-			{
+    ASIOBufferInfo *info = bufferInfos;
+    long i;
+    bool notEnoughMem = false;
+    activeInputs = 0;
+    activeOutputs = 0;
+    blockFrames = bufferSize;
+    for (i = 0; i < numChannels; i++, info++)
+    {
+        if (info->isInput)
+        {
+            if (info->channelNum < 0 || info->channelNum >= kNumInputs)
+                goto error;
+            inMap[activeInputs] = info->channelNum;
+            inputBuffers[activeInputs] = new float[blockFrames * 2]; // double buffer, now float
+            if (inputBuffers[activeInputs])
+            {
+                info->buffers[0] = inputBuffers[activeInputs];
+                info->buffers[1] = inputBuffers[activeInputs] + blockFrames;
+            }
+            else
+            {
+                info->buffers[0] = info->buffers[1] = 0;
+                notEnoughMem = true;
+            }
+            activeInputs++;
+            if (activeInputs > kNumInputs)
+            {
 error:
-				disposeBuffers();
-				return ASE_InvalidParameter;
-			}
-		}
-		else // output			
-		{
-			if (info->channelNum < 0 || info->channelNum >= kNumOutputs)
-				goto error;
-			outMap[activeOutputs] = info->channelNum;
-			outputBuffers[activeOutputs] = new short[blockFrames * 2]; // double buffer
-			if (outputBuffers[activeOutputs])
-			{
-				info->buffers[0] = outputBuffers[activeOutputs];
-				info->buffers[1] = outputBuffers[activeOutputs] + blockFrames;
-			}
-			else
-			{
-				info->buffers[0] = info->buffers[1] = 0;
-				notEnoughMem = true;
-			}
-			activeOutputs++;
-			if (activeOutputs > kNumOutputs)
-			{
-				activeOutputs--;
-				disposeBuffers();
-				return ASE_InvalidParameter;
-			}
-		}
-	} 
-	if (notEnoughMem)
-	{
-		disposeBuffers();
-		return ASE_NoMemory;
-	}
-	this->callbacks = callbacks;
-	if (callbacks->asioMessage (kAsioSupportsTimeInfo, 0, 0, 0))
-	{
-		timeInfoMode = true;
-		asioTime.timeInfo.speed = 1.;
-		asioTime.timeInfo.systemTime.hi = asioTime.timeInfo.systemTime.lo = 0;
-		asioTime.timeInfo.samplePosition.hi = asioTime.timeInfo.samplePosition.lo = 0;
-		asioTime.timeInfo.sampleRate = sampleRate;
-		asioTime.timeInfo.flags = kSystemTimeValid | kSamplePositionValid | kSampleRateValid;
-		asioTime.timeCode.speed = 1.;
-		asioTime.timeCode.timeCodeSamples.lo = asioTime.timeCode.timeCodeSamples.hi = 0;
-		asioTime.timeCode.flags = kTcValid | kTcRunning ;
-	}
-	else
-		timeInfoMode = false;	
-	return ASE_OK;
+                disposeBuffers();
+                return ASE_InvalidParameter;
+            }
+        }
+        else // output			
+        {
+            if (info->channelNum < 0 || info->channelNum >= kNumOutputs)
+                goto error;
+            outMap[activeOutputs] = info->channelNum;
+            outputBuffers[activeOutputs] = new float[blockFrames * 2]; // double buffer, now float
+            if (outputBuffers[activeOutputs])
+            {
+                info->buffers[0] = outputBuffers[activeOutputs];
+                info->buffers[1] = outputBuffers[activeOutputs] + blockFrames;
+            }
+            else
+            {
+                info->buffers[0] = info->buffers[1] = 0;
+                notEnoughMem = true;
+            }
+            activeOutputs++;
+            if (activeOutputs > kNumOutputs)
+            {
+                activeOutputs--;
+                disposeBuffers();
+                return ASE_InvalidParameter;
+            }
+        }
+    } 
+    if (notEnoughMem)
+    {
+        disposeBuffers();
+        return ASE_NoMemory;
+    }
+    this->callbacks = callbacks;
+    if (callbacks->asioMessage (kAsioSupportsTimeInfo, 0, 0, 0))
+    {
+        timeInfoMode = true;
+        asioTime.timeInfo.speed = 1.;
+        asioTime.timeInfo.systemTime.hi = asioTime.timeInfo.systemTime.lo = 0;
+        asioTime.timeInfo.samplePosition.hi = asioTime.timeInfo.samplePosition.lo = 0;
+        asioTime.timeInfo.sampleRate = sampleRate;
+        asioTime.timeInfo.flags = kSystemTimeValid | kSamplePositionValid | kSampleRateValid;
+        asioTime.timeCode.speed = 1.;
+        asioTime.timeCode.timeCodeSamples.lo = asioTime.timeCode.timeCodeSamples.hi = 0;
+        asioTime.timeCode.flags = kTcValid | kTcRunning ;
+    }
+    else
+        timeInfoMode = false;	
+    return ASE_OK;
 }
 
 //---------------------------------------------------------------------------------------------
 ASIOError pwarASIO::disposeBuffers()
 {
-	long i;
-	callbacks = 0;
-	stop();
-	for (i = 0; i < activeInputs; i++)
-		delete inputBuffers[i];
-	activeInputs = 0;
-	for (i = 0; i < activeOutputs; i++)
-		delete outputBuffers[i];
-	activeOutputs = 0;
-	return ASE_OK;
+    long i;
+    callbacks = 0;
+    stop();
+    for (i = 0; i < activeInputs; i++)
+        delete[] inputBuffers[i]; // now float
+    activeInputs = 0;
+    for (i = 0; i < activeOutputs; i++)
+        delete[] outputBuffers[i]; // now float
+    activeOutputs = 0;
+    return ASE_OK;
 }
 
 //---------------------------------------------------------------------------------------------
@@ -479,74 +479,72 @@ ASIOError pwarASIO::future (long selector, void* opt) // !!! check properties
 bool pwarASIO::inputOpen ()
 {
 #if TESTWAVES
-	sineWave = new short[blockFrames];
-	if (!sineWave)
-	{
-		strcpy (errorMessage, "ASIO Sample Driver: Out of Memory!");
-		return false;
-	}
-	makeSine (sineWave);
-	sawTooth = new short[blockFrames];
-	if (!sawTooth)
-	{
-		strcpy(errorMessage, "ASIO Sample Driver: Out of Memory!");
-		return false;
-	}
-	makeSaw(sawTooth);
+    sineWave = new float[blockFrames];
+    if (!sineWave)
+    {
+        strcpy (errorMessage, "ASIO Sample Driver: Out of Memory!");
+        return false;
+    }
+    makeSine (sineWave);
+    sawTooth = new float[blockFrames];
+    if (!sawTooth)
+    {
+        strcpy(errorMessage, "ASIO Sample Driver: Out of Memory!");
+        return false;
+    }
+    makeSaw(sawTooth);
 #endif
-	return true;
+    return true;
 }
 #if TESTWAVES
 #include <math.h>
 const double pi = 0.3141592654;
-//---------------------------------------------------------------------------------------------
-void pwarASIO::makeSine (short *wave)
+void pwarASIO::makeSine (float *wave)
 {
-	double frames = (double)blockFrames;
-	double i, f = (pi * 2.) / frames;
-	for (i = 0; i < frames; i++)
-		*wave++ = (short)((double)0x7fff * sin(f * i));
+    double frames = (double)blockFrames;
+    double i, f = (pi * 2.) / frames;
+    for (i = 0; i < frames; i++)
+        *wave++ = (float)sin(f * i);
 }
-//---------------------------------------------------------------------------------------------
-void pwarASIO::makeSaw(short *wave)
+void pwarASIO::makeSaw(float *wave)
 {
-	double frames = (double)blockFrames;
-	double i, f = 2. / frames;
-	for (i = 0; i < frames; i++)
-		*wave++ = (short)((double)0x7fff * (-1. + f * i));
+    double frames = (double)blockFrames;
+    double i, f = 2. / frames;
+    for (i = 0; i < frames; i++)
+        *wave++ = (float)(-1. + f * i);
 }
 #endif
 //---------------------------------------------------------------------------------------------
 void pwarASIO::inputClose ()
 {
 #if TESTWAVES
-	if (sineWave)
-		delete sineWave;
-	sineWave = 0;
-	if (sawTooth)
-		delete sawTooth;
-	sawTooth = 0;
+    if (sineWave)
+        delete[] sineWave;
+    sineWave = 0;
+    if (sawTooth)
+        delete[] sawTooth;
+    sawTooth = 0;
 #endif
 }
 //---------------------------------------------------------------------------------------------
 void pwarASIO::input()
 {
 #if TESTWAVES
-	long i;
-	short *in = 0;
-	for (i = 0; i < activeInputs; i++)
-	{
-		in = inputBuffers[i];
-		if (in)
-		{
-			if (toggle)
-				in += blockFrames;
-			if ((i & 1) && sawTooth)
-				memcpy(in, sawTooth, (unsigned long)(blockFrames * 2));
-			else if (sineWave)
-				memcpy(in, sineWave, (unsigned long)(blockFrames * 2));
-		}
-	}
+    long i;
+    float *in = 0;
+    for (i = 0; i < activeInputs; i++)
+    {
+        in = inputBuffers[i];
+        if (in)
+        {
+            if (toggle)
+                in += blockFrames;
+            if ((i & 1) && sawTooth)
+                memcpy(in, sawTooth, (unsigned long)(blockFrames * sizeof(float)));
+            else if (sineWave)
+                memcpy(in, sineWave, (unsigned long)(blockFrames * sizeof(float)));
+        }
+    }
 #endif
 }
 //------------------------------------------------------------------------------------------------------------------
@@ -586,48 +584,32 @@ void pwarASIO::bufferSwitch ()
 	}
 }
 
-// This will need to be properly thought out, not just with some AI BS code.
-// Anyways, I could still see some waveforms in Reaper, so it seems to work
-// on some level.
 void pwarASIO::switchBuffersFromPwarPacket(const rt_stream_packet_t& packet)
 {
-    constexpr size_t MAX_SAMPLES = RT_STREAM_PACKET_FRAME_SIZE;
-    for (long i = 0; i < activeInputs; i++)
-    {
-        short* dest = inputBuffers[i];
-        long offset = inMap[i] * blockFrames;
-        size_t available = (offset < MAX_SAMPLES) ? (MAX_SAMPLES - offset) : 0;
-        size_t to_copy = (blockFrames < available) ? blockFrames : available;
-        for (size_t j = 0; j < to_copy; ++j)
-        {
-            uint16_t s = packet.samples[offset + j];
-            dest[j] = (short)((int)s - 32768);
-        }
-        // Zero the rest if not enough samples
+
+    size_t to_copy = (blockFrames < packet.n_samples) ? blockFrames : packet.n_samples;
+    for (long i = 0; i < activeInputs; i++) {
+        float* dest = inputBuffers[i] + (toggle ? blockFrames : 0);
+        memcpy(dest, packet.samples, to_copy * sizeof(float));
         for (size_t j = to_copy; j < blockFrames; ++j)
-            dest[j] = 0;
+            dest[j] = 0.0f;
     }
-    for (long i = 0; i < activeOutputs; i++)
-    {
-        short* dest = outputBuffers[i];
-        long offset = outMap[i] * blockFrames;
-        size_t available = (offset < MAX_SAMPLES) ? (MAX_SAMPLES - offset) : 0;
-        size_t to_copy = (blockFrames < available) ? blockFrames : available;
-        for (size_t j = 0; j < to_copy; ++j)
-        {
-            uint16_t s = packet.samples[offset + j];
-            dest[j] = (short)((int)s - 32768);
-        }
+    for (long i = 0; i < activeOutputs; i++) {
+        float* dest = outputBuffers[i] + (toggle ? blockFrames : 0);
+        memcpy(dest, packet.samples, to_copy * sizeof(float));
         for (size_t j = to_copy; j < blockFrames; ++j)
-            dest[j] = 0;
+            dest[j] = 0.0f;
     }
 
-	samplePosition += blockFrames;
-	if (timeInfoMode)
-		bufferSwitchX ();
-	else
-		callbacks->bufferSwitch (toggle, ASIOFalse);
-	toggle = toggle ? 0 : 1;
+    samplePosition += blockFrames;
+    if (timeInfoMode)
+    {
+        bufferSwitchX();
+    }
+    else {
+        callbacks->bufferSwitch(toggle, ASIOFalse);
+    }
+    toggle = toggle ? 0 : 1;
 }
 
 //---------------------------------------------------------------------------------------------
@@ -704,24 +686,22 @@ void pwarASIO::udp_packet_listener() {
                 rt_stream_packet_t pkt;
                 memcpy(&pkt, buffer, sizeof(rt_stream_packet_t));
                 char logMsg[512];
-                snprintf(logMsg, sizeof(logMsg), "rt_stream_packet_t: n_samples=%u, seq=%llu, timestamp=%llu", pkt.n_samples, (unsigned long long)pkt.seq, (unsigned long long)pkt.timestamp);
-                pwarASIOLog::Send(logMsg);
-                // Log all samples
+                //snprintf(logMsg, sizeof(logMsg), "rt_stream_packet_t: n_samples=%u, seq=%llu, timestamp=%llu", pkt.n_samples, (unsigned long long)pkt.seq, (unsigned long long)pkt.timestamp);
+                //pwarASIOLog::Send(logMsg);
+                // Log all samples as floats
                 char sampleMsg[2048];
                 int offset = 0;
                 for (uint16_t i = 0; i < pkt.n_samples && i < RT_STREAM_PACKET_FRAME_SIZE; ++i) {
-                    int written = snprintf(sampleMsg + offset, sizeof(sampleMsg) - offset, "%d%s", pkt.samples[i], (i < pkt.n_samples - 1) ? "," : "");
+                    int written = snprintf(sampleMsg + offset, sizeof(sampleMsg) - offset, "%f%s", (double)pkt.samples[i], (i < pkt.n_samples - 1) ? "," : "");
                     if (written < 0 || offset + written >= (int)sizeof(sampleMsg)) break;
                     offset += written;
                 }
-				switchBuffersFromPwarPacket(pkt);
+                switchBuffersFromPwarPacket(pkt);
                 sampleMsg[offset] = '\0';
-                pwarASIOLog::Send(sampleMsg);
-                // Example: call a class method here if needed
-                // this->processPacket(pkt);
+                //pwarASIOLog::Send(sampleMsg);
             } else {
                 char logMsg[128];
-                snprintf(logMsg, sizeof(logMsg), "Received packet too small for rt_stream_packet_t (%d bytes)", n);
+                snprintf(logMsg, sizeof(logMsg), "Received packet too short for rt_stream_packet_t (%d bytes)", n);
                 pwarASIOLog::Send(logMsg);
             }
         }
