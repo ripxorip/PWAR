@@ -653,13 +653,11 @@ void pwarASIO::udp_packet_listener() {
     char buffer[2048];
 
     if (WSAStartup(MAKEWORD(2,2), &wsaData) != 0) {
-        printf("WSAStartup failed\n");
         return;
     }
 
     sockfd = socket(AF_INET, SOCK_DGRAM, 0);
     if (sockfd == INVALID_SOCKET) {
-        printf("Socket creation failed\n");
         WSACleanup();
         return;
     }
@@ -670,13 +668,11 @@ void pwarASIO::udp_packet_listener() {
     servaddr.sin_port = htons(8321);
 
     if (bind(sockfd, (struct sockaddr*)&servaddr, sizeof(servaddr)) == SOCKET_ERROR) {
-        printf("Bind failed\n");
         closesocket(sockfd);
         WSACleanup();
         return;
     }
 
-    printf("UDP listener started on port 8321\n");
     udpListenerRunning = true;
     while (udpListenerRunning) {
         len = sizeof(cliaddr);
@@ -685,24 +681,7 @@ void pwarASIO::udp_packet_listener() {
             if (n >= sizeof(rt_stream_packet_t)) {
                 rt_stream_packet_t pkt;
                 memcpy(&pkt, buffer, sizeof(rt_stream_packet_t));
-                char logMsg[512];
-                //snprintf(logMsg, sizeof(logMsg), "rt_stream_packet_t: n_samples=%u, seq=%llu, timestamp=%llu", pkt.n_samples, (unsigned long long)pkt.seq, (unsigned long long)pkt.timestamp);
-                //pwarASIOLog::Send(logMsg);
-                // Log all samples as floats
-                char sampleMsg[2048];
-                int offset = 0;
-                for (uint16_t i = 0; i < pkt.n_samples && i < RT_STREAM_PACKET_FRAME_SIZE; ++i) {
-                    int written = snprintf(sampleMsg + offset, sizeof(sampleMsg) - offset, "%f%s", (double)pkt.samples[i], (i < pkt.n_samples - 1) ? "," : "");
-                    if (written < 0 || offset + written >= (int)sizeof(sampleMsg)) break;
-                    offset += written;
-                }
                 switchBuffersFromPwarPacket(pkt);
-                sampleMsg[offset] = '\0';
-                //pwarASIOLog::Send(sampleMsg);
-            } else {
-                char logMsg[128];
-                snprintf(logMsg, sizeof(logMsg), "Received packet too short for rt_stream_packet_t (%d bytes)", n);
-                pwarASIOLog::Send(logMsg);
             }
         }
     }
