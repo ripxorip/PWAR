@@ -1,4 +1,7 @@
 {
     "cmake.generator": "Ninja",
-    "cmake.sourceDirectory": "${workspaceFolder}"
+    "cmake.sourceDirectory": "${workspaceFolder}",
+    "files.associations": {
+        "signal.h": "c"
+    }
 }
