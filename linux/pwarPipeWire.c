@@ -42,7 +42,46 @@
          uint32_t seq;
          int sockfd;
          struct sockaddr_in servaddr;
+
+         int recv_sockfd; // receive socket
+         pthread_mutex_t packet_mutex;
+         rt_stream_packet_t latest_packet;
+         int packet_available;
  };
+
+
+ void setup_recv_socket(struct data *data)
+{
+    data->recv_sockfd = socket(AF_INET, SOCK_DGRAM, 0);
+    if (data->recv_sockfd < 0) {
+        perror("recv socket creation failed");
+        exit(EXIT_FAILURE);
+    }
+    struct sockaddr_in recv_addr = {0};
+    recv_addr.sin_family = AF_INET;
+    recv_addr.sin_addr.s_addr = INADDR_ANY;
+    recv_addr.sin_port = htons(STREAM_PORT);
+    if (bind(data->recv_sockfd, (struct sockaddr *)&recv_addr, sizeof(recv_addr)) < 0) {
+        perror("recv socket bind failed");
+        exit(EXIT_FAILURE);
+    }
+}
+
+void *receiver_thread(void *userdata) {
+    struct data *data = userdata;
+    rt_stream_packet_t packet;
+    while (1) {
+        ssize_t n = recvfrom(data->recv_sockfd, &packet, sizeof(packet), 0, NULL, NULL);
+        if (n == sizeof(packet)) {
+            pthread_mutex_lock(&data->packet_mutex);
+            data->latest_packet = packet;
+            data->packet_available = 1;
+            pthread_mutex_unlock(&data->packet_mutex);
+            printf("Rcv seq: %u\n", packet.seq);
+        }
+    }
+    return NULL;
+}
   
  void setup_socket(void *userdata)
  {
@@ -108,7 +147,6 @@ static void stream_buffer(float *samples, uint32_t n_samples, void *userdata)
          struct data *data = userdata;
          float *in, *out;
          uint32_t n_samples = position->clock.duration;
-         printf("on_process: %p, n_samples: %d\n", data, n_samples);
   
          pw_log_trace("do process %d", n_samples);
   
@@ -130,8 +168,32 @@ static void stream_buffer(float *samples, uint32_t n_samples, void *userdata)
   
          if (in == NULL || out == NULL)
                  return;
+
+         // Wait for 5ms to allow the response to arrive
+         struct timespec req = {0};
+         req.tv_sec = 0;
+         req.tv_nsec = 5 * 1000 * 1000; // 4 ms
+         nanosleep(&req, NULL);
+
+         // Try to get the latest packet
+         int got_packet = 0;
+         pthread_mutex_lock(&data->packet_mutex);
+         if (data->packet_available)
+         {
+                 memcpy(out, data->latest_packet.samples, n_samples * sizeof(float));
+                 got_packet = 1;
+                 data->packet_available = 0; // Reset packet availability
+                printf("I sent seq: %u and got seq: %u\n", data->seq - 1, data->latest_packet.seq);
+         }
+         pthread_mutex_unlock(&data->packet_mutex);
+
+         if (!got_packet)
+         {
+                printf("No valid packet received, outputting silence\n");
+                printf("I wanted seq: %u and got seq: %u\n", data->seq - 1, data->latest_packet.seq);
+                memset(out, 0, n_samples * sizeof(float)); // output silence if no valid packet
+         } 
   
-         memcpy(out, in, n_samples * sizeof(float));
  }
   
  static const struct pw_filter_events filter_events = {
@@ -158,6 +220,13 @@ static void stream_buffer(float *samples, uint32_t n_samples, void *userdata)
          struct spa_pod_builder b = SPA_POD_BUILDER_INIT(buffer, sizeof(buffer));
 
          setup_socket(&data);
+
+         setup_recv_socket(&data);  // for receiving
+
+         pthread_mutex_init(&data.packet_mutex, NULL);
+         data.packet_available = 0;
+         pthread_t recv_thread;
+         pthread_create(&recv_thread, NULL, receiver_thread, &data);
   
          pw_init(&argc, &argv);
   
