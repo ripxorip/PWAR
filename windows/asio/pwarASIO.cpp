@@ -134,12 +134,14 @@ pwarASIO::pwarASIO (LPUNKNOWN pUnk, HRESULT *phr)
 	callbacks = 0;
 	activeInputs = activeOutputs = 0;
 	toggle = 0;
+    initUdpSender();
     startUdpListener();
 }
 
 //------------------------------------------------------------------------------------------
 pwarASIO::~pwarASIO ()
 {
+    closeUdpSender();
     stopUdpListener();
 	stop ();
 	outputClose ();
@@ -566,21 +568,8 @@ void pwarASIO::outputClose ()
 // Refactored output to take a packet parameter
 void pwarASIO::output(const rt_stream_packet_t& packet)
 {
-    // Send the provided packet over UDP to 10.0.0.171:8321
-    WSADATA wsaData;
-    SOCKET sockfd;
-    struct sockaddr_in servaddr;
-    if (WSAStartup(MAKEWORD(2,2), &wsaData) == 0) {
-        sockfd = socket(AF_INET, SOCK_DGRAM, 0);
-        if (sockfd != INVALID_SOCKET) {
-            memset(&servaddr, 0, sizeof(servaddr));
-            servaddr.sin_family = AF_INET;
-            servaddr.sin_port = htons(8321);
-            inet_pton(AF_INET, "10.0.0.171", &servaddr.sin_addr);
-            sendto(sockfd, (const char*)&packet, sizeof(rt_stream_packet_t), 0, (struct sockaddr*)&servaddr, sizeof(servaddr));
-            closesocket(sockfd);
-        }
-        WSACleanup();
+    if (udpSendSocket != INVALID_SOCKET) {
+        sendto(udpSendSocket, (const char*)&packet, sizeof(rt_stream_packet_t), 0, (struct sockaddr*)&udpSendAddr, sizeof(udpSendAddr));
     }
 }
 
@@ -731,6 +720,35 @@ void pwarASIO::stopUdpListener() {
     udpListenerRunning = false;
     if (udpListenerThread.joinable()) {
         udpListenerThread.join();
+    }
+}
+
+void pwarASIO::initUdpSender() {
+    if (!udpWSAInitialized) {
+        WSADATA wsaData;
+        if (WSAStartup(MAKEWORD(2,2), &wsaData) == 0) {
+            udpWSAInitialized = true;
+        }
+    }
+    if (udpSendSocket == INVALID_SOCKET && udpWSAInitialized) {
+        udpSendSocket = socket(AF_INET, SOCK_DGRAM, 0);
+        if (udpSendSocket != INVALID_SOCKET) {
+            memset(&udpSendAddr, 0, sizeof(udpSendAddr));
+            udpSendAddr.sin_family = AF_INET;
+            udpSendAddr.sin_port = htons(8321);
+            inet_pton(AF_INET, "10.0.0.171", &udpSendAddr.sin_addr);
+        }
+    }
+}
+
+void pwarASIO::closeUdpSender() {
+    if (udpSendSocket != INVALID_SOCKET) {
+        closesocket(udpSendSocket);
+        udpSendSocket = INVALID_SOCKET;
+    }
+    if (udpWSAInitialized) {
+        WSACleanup();
+        udpWSAInitialized = false;
     }
 }
 

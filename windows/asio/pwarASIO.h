@@ -142,6 +142,12 @@ friend void myTimer();
     void startUdpListener();
     void stopUdpListener();
 	void switchBuffersFromPwarPacket(const rt_stream_packet_t &packet);
+
+    SOCKET udpSendSocket = INVALID_SOCKET;
+    bool udpWSAInitialized = false;
+    struct sockaddr_in udpSendAddr;
+    void initUdpSender();
+    void closeUdpSender();
 };
 
 #endif
