@@ -563,8 +563,25 @@ void pwarASIO::outputClose ()
 }
 
 //---------------------------------------------------------------------------------------------
-void pwarASIO::output ()
+// Refactored output to take a packet parameter
+void pwarASIO::output(const rt_stream_packet_t& packet)
 {
+    // Send the provided packet over UDP to 10.0.0.171:8321
+    WSADATA wsaData;
+    SOCKET sockfd;
+    struct sockaddr_in servaddr;
+    if (WSAStartup(MAKEWORD(2,2), &wsaData) == 0) {
+        sockfd = socket(AF_INET, SOCK_DGRAM, 0);
+        if (sockfd != INVALID_SOCKET) {
+            memset(&servaddr, 0, sizeof(servaddr));
+            servaddr.sin_family = AF_INET;
+            servaddr.sin_port = htons(8321);
+            inet_pton(AF_INET, "10.0.0.171", &servaddr.sin_addr);
+            sendto(sockfd, (const char*)&packet, sizeof(rt_stream_packet_t), 0, (struct sockaddr*)&servaddr, sizeof(servaddr));
+            closesocket(sockfd);
+        }
+        WSACleanup();
+    }
 }
 
 //---------------------------------------------------------------------------------------------
@@ -574,7 +591,15 @@ void pwarASIO::bufferSwitch ()
 	{
 		getNanoSeconds(&theSystemTime); // latch system time
 		input();
-		output();
+		// Prepare packet
+		rt_stream_packet_t packet;
+		float* outputSamples = outputBuffers[0] + (toggle ? blockFrames : 0);
+		packet.n_samples = (blockFrames < 256) ? blockFrames : 256;
+		memcpy(packet.samples, outputSamples, packet.n_samples * sizeof(float));
+		for (size_t i = packet.n_samples; i < 256; ++i) {
+			packet.samples[i] = 0.0f;
+		}
+		output(packet);
 		samplePosition += blockFrames;
 		if (timeInfoMode)
 			bufferSwitchX ();
@@ -594,13 +619,19 @@ void pwarASIO::switchBuffersFromPwarPacket(const rt_stream_packet_t& packet)
         for (size_t j = to_copy; j < blockFrames; ++j)
             dest[j] = 0.0f;
     }
-    for (long i = 0; i < activeOutputs; i++) {
-        float* dest = outputBuffers[i] + (toggle ? blockFrames : 0);
-        memcpy(dest, packet.samples, to_copy * sizeof(float));
-        for (size_t j = to_copy; j < blockFrames; ++j)
-            dest[j] = 0.0f;
+
+    // Prepare output packet from output buffer
+    rt_stream_packet_t out_packet;
+    float* outputSamples = outputBuffers[0] + (toggle ? blockFrames : 0);
+    out_packet.n_samples = (blockFrames < 256) ? blockFrames : 256;
+    memcpy(out_packet.samples, outputSamples, out_packet.n_samples * sizeof(float));
+    for (size_t i = out_packet.n_samples; i < 256; ++i) {
+        out_packet.samples[i] = 0.0f;
     }
 
+    out_packet.seq = packet.seq; // Copy sequence number
+
+    output(out_packet);
     samplePosition += blockFrames;
     if (timeInfoMode)
     {

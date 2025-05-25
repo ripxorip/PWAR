@@ -107,7 +107,7 @@ friend void myTimer();
 
 	bool outputOpen ();
 	void outputClose ();
-	void output ();
+	void output(const rt_stream_packet_t& packet);
 
 	void timerOn ();
 	void timerOff ();
