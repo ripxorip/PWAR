@@ -7,6 +7,7 @@
 #include <mutex>
 #include <stdio.h>
 #include <string.h>
+#include <chrono>
 #include "pwarASIO.h"
 #include "pwarASIOLog.h"
 #include "../../protocol/pwar_packet.h"
@@ -611,6 +612,8 @@ void pwarASIO::switchBuffersFromPwarPacket(const rt_stream_packet_t& packet)
 
     // Prepare output packet from output buffer
     rt_stream_packet_t out_packet;
+    out_packet.ts_pipewire_send = packet.ts_pipewire_send; // Copy PipeWire send timestamp
+
     float* outputSamples = outputBuffers[0] + (toggle ? blockFrames : 0);
     out_packet.n_samples = (blockFrames < 256) ? blockFrames : 256;
     memcpy(out_packet.samples, outputSamples, out_packet.n_samples * sizeof(float));
@@ -618,9 +621,7 @@ void pwarASIO::switchBuffersFromPwarPacket(const rt_stream_packet_t& packet)
         out_packet.samples[i] = 0.0f;
     }
 
-    out_packet.seq = packet.seq; // Copy sequence number
 
-    output(out_packet);
     samplePosition += blockFrames;
     if (timeInfoMode)
     {
@@ -629,6 +630,15 @@ void pwarASIO::switchBuffersFromPwarPacket(const rt_stream_packet_t& packet)
     else {
         callbacks->bufferSwitch(toggle, ASIOFalse);
     }
+
+    out_packet.seq = packet.seq; // Copy sequence number
+
+    uint64_t nowNs = std::chrono::duration_cast<std::chrono::nanoseconds>(
+            std::chrono::high_resolution_clock::now().time_since_epoch()).count();
+    out_packet.ts_asio_send = (nowNs - _timestamp) + packet.ts_pipewire_send; // Calculate ASIO send timestamp
+
+    output(out_packet);
+
     toggle = toggle ? 0 : 1;
 }
 
@@ -701,6 +711,10 @@ void pwarASIO::udp_packet_listener() {
             if (n >= sizeof(rt_stream_packet_t)) {
                 rt_stream_packet_t pkt;
                 memcpy(&pkt, buffer, sizeof(rt_stream_packet_t));
+
+                _timestamp = std::chrono::duration_cast<std::chrono::nanoseconds>(
+                    std::chrono::high_resolution_clock::now().time_since_epoch()).count();
+
                 switchBuffersFromPwarPacket(pkt);
             }
         }

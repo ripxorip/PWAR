@@ -136,6 +136,8 @@ friend void myTimer();
 	bool timeInfoMode, tcRead;
 	char errorMessage[128];
 
+	uint64_t _timestamp = 0;
+
     std::thread udpListenerThread;
     bool udpListenerRunning = false;
     void udp_packet_listener();
