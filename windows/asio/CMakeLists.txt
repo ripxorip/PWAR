@@ -32,3 +32,9 @@ target_include_directories(PWARASIO PRIVATE
 target_compile_definitions(PWARASIO PRIVATE WIN32 _WINDOWS _CRT_SECURE_NO_DEPRECATE)
 
 target_link_libraries(PWARASIO PRIVATE odbc32 odbccp32 winmm)
+
+add_custom_command(TARGET PWARASIO POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        $<TARGET_FILE:PWARASIO>
+        Z:/music_production/PWAR/
+)
