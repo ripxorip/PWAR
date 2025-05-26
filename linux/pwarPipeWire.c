@@ -77,7 +77,23 @@ void *receiver_thread(void *userdata) {
             data->latest_packet = packet;
             data->packet_available = 1;
             pthread_mutex_unlock(&data->packet_mutex);
-            printf("Rcv seq: %u\n", packet.seq);
+
+            struct timespec ts;
+            clock_gettime(CLOCK_MONOTONIC, &ts);
+            uint64_t ts_return = ts.tv_sec * 1000000000 + ts.tv_nsec;
+
+            uint64_t total_latency = ts_return - packet.ts_pipewire_send;
+            uint64_t daw_latency = packet.ts_asio_send - packet.ts_pipewire_send;
+            uint64_t network_latency = total_latency - daw_latency;
+
+            // Convert these latencies to milliseconds
+            double total_latency_ms = total_latency / 1000000.0;
+            double daw_latency_ms = daw_latency / 1000000.0;
+            double network_latency_ms = network_latency / 1000000.0;
+
+            printf("Received packet seq: %u, Total Latency: %.2f ms, DAW Latency: %.2f ms, Network Latency: %.2f ms\n",
+                   packet.seq, total_latency_ms, daw_latency_ms, network_latency_ms);
+
         }
     }
     return NULL;
@@ -183,13 +199,12 @@ static void stream_buffer(float *samples, uint32_t n_samples, void *userdata)
                  memcpy(out, data->latest_packet.samples, n_samples * sizeof(float));
                  got_packet = 1;
                  data->packet_available = 0; // Reset packet availability
-                printf("I sent seq: %u and got seq: %u\n", data->seq - 1, data->latest_packet.seq);
          }
          pthread_mutex_unlock(&data->packet_mutex);
 
          if (!got_packet)
          {
-                printf("No valid packet received, outputting silence\n");
+                printf("--- ERROR -- No valid packet received, outputting silence\n");
                 printf("I wanted seq: %u and got seq: %u\n", data->seq - 1, data->latest_packet.seq);
                 memset(out, 0, n_samples * sizeof(float)); // output silence if no valid packet
          } 
