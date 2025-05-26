@@ -715,7 +715,9 @@ void pwarASIO::udp_packet_listener() {
                 _timestamp = std::chrono::duration_cast<std::chrono::nanoseconds>(
                     std::chrono::high_resolution_clock::now().time_since_epoch()).count();
 
-                switchBuffersFromPwarPacket(pkt);
+                if (started) {
+                    switchBuffersFromPwarPacket(pkt);
+                }
             }
         }
     }
