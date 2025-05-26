@@ -8,7 +8,10 @@
 typedef struct {
     uint16_t n_samples;
     uint64_t seq;
-    uint64_t timestamp;
+
+    uint64_t ts_pipewire_send;     // when PipeWire sends input
+    uint64_t ts_asio_send;        // when DAW finishes processing and returns
+
     float samples[RT_STREAM_PACKET_FRAME_SIZE];
 } rt_stream_packet_t;
 

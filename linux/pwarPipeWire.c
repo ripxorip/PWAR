@@ -116,7 +116,7 @@ static void stream_buffer(float *samples, uint32_t n_samples, void *userdata)
     clock_gettime(CLOCK_MONOTONIC, &ts);
     uint64_t timestamp = ts.tv_sec * 1000000000 + ts.tv_nsec;
 
-    packet.timestamp = timestamp;
+    packet.ts_pipewire_send = timestamp;
 
     // Send the packet
     if (sendto(data->sockfd, &packet, sizeof(packet), 0, (struct sockaddr *)&data->servaddr, sizeof(data->servaddr)) < 0)
