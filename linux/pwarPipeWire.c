@@ -188,7 +188,7 @@ static void stream_buffer(float *samples, uint32_t n_samples, void *userdata)
          // Wait for 5ms to allow the response to arrive
          struct timespec req = {0};
          req.tv_sec = 0;
-         req.tv_nsec = 3 * 1000 * 1000; // 4 ms
+         req.tv_nsec = 1.75 * 1000 * 1000; // 2 ms
          nanosleep(&req, NULL);
 
          // Try to get the latest packet
@@ -225,7 +225,7 @@ static void stream_buffer(float *samples, uint32_t n_samples, void *userdata)
  int main(int argc, char *argv[])
  {
         char latency[20];
-        sprintf(latency, "%d/48000", 256);
+        sprintf(latency, "%d/48000", 128);
         setenv("PIPEWIRE_LATENCY", latency, 1);
 
 
@@ -252,7 +252,7 @@ static void stream_buffer(float *samples, uint32_t n_samples, void *userdata)
          pw_loop_add_signal(pw_main_loop_get_loop(data.loop), SIGINT, do_quit, &data);
          pw_loop_add_signal(pw_main_loop_get_loop(data.loop), SIGTERM, do_quit, &data);
 
-         data.test_mode = 0; // Enable test mode for sine wave generation
+         data.test_mode = 1; // Enable test mode for sine wave generation
          data.sine_phase = 0.0f; // Initialize sine phase
   
          /* Create a simple filter, the simple filter manages the core and remote
