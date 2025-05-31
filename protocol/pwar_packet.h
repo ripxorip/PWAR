@@ -12,7 +12,8 @@ typedef struct {
     uint64_t ts_pipewire_send;     // when PipeWire sends input
     uint64_t ts_asio_send;        // when DAW finishes processing and returns
 
-    float samples[RT_STREAM_PACKET_FRAME_SIZE];
+    float samples_ch1[RT_STREAM_PACKET_FRAME_SIZE/2];
+    float samples_ch2[RT_STREAM_PACKET_FRAME_SIZE/2];
 } rt_stream_packet_t;
 
 #endif // RT_STREAM_PACKET_H%

@@ -35,7 +35,8 @@
          struct pw_main_loop *loop;
          struct pw_filter *filter;
          struct port *in_port;
-         struct port *out_port;
+         struct port *left_out_port;
+         struct port *right_out_port;
          float sine_phase;
          uint8_t test_mode;
 
@@ -95,7 +96,7 @@ void *receiver_thread(void *userdata) {
             double daw_latency_ms = daw_latency / 1000000.0;
             double network_latency_ms = network_latency / 1000000.0;
 
-            printf("Received packet seq: %u, Total Latency: %.2f ms, DAW Latency: %.2f ms, Network Latency: %.2f ms\n",
+            printf("Received packet seq: %lu, Total Latency: %.2f ms, DAW Latency: %.2f ms, Network Latency: %.2f ms\n",
                    packet.seq, total_latency_ms, daw_latency_ms, network_latency_ms);
 
         }
@@ -130,7 +131,7 @@ static void stream_buffer(float *samples, uint32_t n_samples, void *userdata)
     data->seq += 1;
 
     packet.n_samples = n_samples;
-    memcpy(packet.samples, samples, n_samples * sizeof(float));
+    memcpy(packet.samples_ch1, samples, n_samples * sizeof(float));
 
     struct timespec ts;
     clock_gettime(CLOCK_MONOTONIC, &ts);
@@ -165,13 +166,14 @@ static void stream_buffer(float *samples, uint32_t n_samples, void *userdata)
  static void on_process(void *userdata, struct spa_io_position *position)
  {
          struct data *data = userdata;
-         float *in, *out;
+         float *in, *left_out, *right_out;
          uint32_t n_samples = position->clock.duration;
   
          pw_log_trace("do process %d", n_samples);
   
          in = pw_filter_get_dsp_buffer(data->in_port, n_samples);
-         out = pw_filter_get_dsp_buffer(data->out_port, n_samples);
+         left_out = pw_filter_get_dsp_buffer(data->left_out_port, n_samples);
+         right_out = pw_filter_get_dsp_buffer(data->right_out_port, n_samples);
 
          if (data->test_mode)
          {
@@ -186,7 +188,7 @@ static void stream_buffer(float *samples, uint32_t n_samples, void *userdata)
 
          stream_buffer(in, n_samples, data);
   
-         if (in == NULL || out == NULL)
+         if (in == NULL || left_out == NULL)
                  return;
 
          int got_packet = 0;
@@ -208,7 +210,8 @@ static void stream_buffer(float *samples, uint32_t n_samples, void *userdata)
          }
          if (data->packet_available)
          {
-                 memcpy(out, data->latest_packet.samples, n_samples * sizeof(float));
+                 memcpy(left_out, data->latest_packet.samples_ch1, n_samples * sizeof(float));
+                 memcpy(right_out, data->latest_packet.samples_ch2, n_samples * sizeof(float));
                  got_packet = 1;
                  data->packet_available = 0;
          }
@@ -217,8 +220,9 @@ static void stream_buffer(float *samples, uint32_t n_samples, void *userdata)
          if (!got_packet)
          {
                 printf("--- ERROR -- No valid packet received, outputting silence\n");
-                printf("I wanted seq: %u and got seq: %u\n", data->seq - 1, data->latest_packet.seq);
-                memset(out, 0, n_samples * sizeof(float)); // output silence if no valid packet
+                printf("I wanted seq: %u and got seq: %lu\n", data->seq - 1, data->latest_packet.seq);
+                memset(left_out, 0, n_samples * sizeof(float)); // output silence if no valid packet
+                memset(right_out, 0, n_samples * sizeof(float)); // output silence if no valid packet
          } 
   
  }
@@ -300,13 +304,23 @@ static void stream_buffer(float *samples, uint32_t n_samples, void *userdata)
                          NULL, 0);
   
          /* make an audio DSP output port */
-         data.out_port = pw_filter_add_port(data.filter,
+         data.left_out_port = pw_filter_add_port(data.filter,
                          PW_DIRECTION_OUTPUT,
                          PW_FILTER_PORT_FLAG_MAP_BUFFERS,
                          sizeof(struct port),
                          pw_properties_new(
                                  PW_KEY_FORMAT_DSP, "32 bit float mono audio",
-                                 PW_KEY_PORT_NAME, "output",
+                                 PW_KEY_PORT_NAME, "output-left",
+                                 NULL),
+                         NULL, 0);
+
+         data.right_out_port = pw_filter_add_port(data.filter,
+                         PW_DIRECTION_OUTPUT,
+                         PW_FILTER_PORT_FLAG_MAP_BUFFERS,
+                         sizeof(struct port),
+                         pw_properties_new(
+                                 PW_KEY_FORMAT_DSP, "32 bit float mono audio",
+                                 PW_KEY_PORT_NAME, "output-right",
                                  NULL),
                          NULL, 0);
   
