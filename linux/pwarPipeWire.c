@@ -44,7 +44,10 @@
          struct sockaddr_in servaddr;
 
          int recv_sockfd; // receive socket
+
          pthread_mutex_t packet_mutex;
+         pthread_cond_t packet_cond;
+
          rt_stream_packet_t latest_packet;
          int packet_available;
  };
@@ -76,6 +79,7 @@ void *receiver_thread(void *userdata) {
             pthread_mutex_lock(&data->packet_mutex);
             data->latest_packet = packet;
             data->packet_available = 1;
+            pthread_cond_signal(&data->packet_cond);
             pthread_mutex_unlock(&data->packet_mutex);
 
             struct timespec ts;
@@ -185,20 +189,28 @@ static void stream_buffer(float *samples, uint32_t n_samples, void *userdata)
          if (in == NULL || out == NULL)
                  return;
 
-         // Wait for 5ms to allow the response to arrive
-         struct timespec req = {0};
-         req.tv_sec = 0;
-         req.tv_nsec = 1.75 * 1000 * 1000; // 2 ms
-         nanosleep(&req, NULL);
-
-         // Try to get the latest packet
          int got_packet = 0;
+         struct timespec ts;
+         clock_gettime(CLOCK_REALTIME, &ts);
+         // Wait up to 2ms
+         ts.tv_nsec += 2 * 1000 * 1000;
+         if (ts.tv_nsec >= 1000000000)
+         {
+                 ts.tv_sec += 1;
+                 ts.tv_nsec -= 1000000000;
+         }
          pthread_mutex_lock(&data->packet_mutex);
+         while (!data->packet_available)
+         {
+                 int rc = pthread_cond_timedwait(&data->packet_cond, &data->packet_mutex, &ts);
+                 if (rc == ETIMEDOUT)
+                         break;
+         }
          if (data->packet_available)
          {
                  memcpy(out, data->latest_packet.samples, n_samples * sizeof(float));
                  got_packet = 1;
-                 data->packet_available = 0; // Reset packet availability
+                 data->packet_available = 0;
          }
          pthread_mutex_unlock(&data->packet_mutex);
 
@@ -239,6 +251,8 @@ static void stream_buffer(float *samples, uint32_t n_samples, void *userdata)
          setup_recv_socket(&data);  // for receiving
 
          pthread_mutex_init(&data.packet_mutex, NULL);
+         pthread_cond_init(&data.packet_cond, NULL);
+
          data.packet_available = 0;
          pthread_t recv_thread;
          pthread_create(&recv_thread, NULL, receiver_thread, &data);
