@@ -752,7 +752,7 @@ void pwarASIO::initUdpSender() {
             memset(&udpSendAddr, 0, sizeof(udpSendAddr));
             udpSendAddr.sin_family = AF_INET;
             udpSendAddr.sin_port = htons(8321);
-            inet_pton(AF_INET, "10.0.0.171", &udpSendAddr.sin_addr);
+            inet_pton(AF_INET, "192.168.66.2", &udpSendAddr.sin_addr);
         }
     }
 }
