@@ -581,6 +581,7 @@ void pwarASIO::bufferSwitch ()
 {
 	if (started && callbacks)
 	{
+      /*
 		getNanoSeconds(&theSystemTime); // latch system time
 		input();
 		// Prepare packet
@@ -598,6 +599,7 @@ void pwarASIO::bufferSwitch ()
 		else
 			callbacks->bufferSwitch (toggle, ASIOFalse);
 		toggle = toggle ? 0 : 1;
+        */
 	}
 }
 
@@ -606,7 +608,7 @@ void pwarASIO::switchBuffersFromPwarPacket(const rt_stream_packet_t& packet)
     size_t to_copy = (blockFrames < packet.n_samples) ? blockFrames : packet.n_samples;
     for (long i = 0; i < activeInputs; i++) {
         float* dest = inputBuffers[i] + (toggle ? blockFrames : 0);
-        memcpy(dest, packet.samples, to_copy * sizeof(float));
+        memcpy(dest, packet.samples_ch1, to_copy * sizeof(float));
         for (size_t j = to_copy; j < blockFrames; ++j)
             dest[j] = 0.0f;
     }
@@ -614,14 +616,6 @@ void pwarASIO::switchBuffersFromPwarPacket(const rt_stream_packet_t& packet)
     // Prepare output packet from output buffer
     rt_stream_packet_t out_packet;
     out_packet.ts_pipewire_send = packet.ts_pipewire_send; // Copy PipeWire send timestamp
-
-    float* outputSamples = outputBuffers[0] + (toggle ? blockFrames : 0);
-    out_packet.n_samples = blockFrames;
-    memcpy(out_packet.samples, outputSamples, out_packet.n_samples * sizeof(float));
-    for (size_t i = out_packet.n_samples; i < blockFrames; ++i) {
-        out_packet.samples[i] = 0.0f;
-    }
-
 
     samplePosition += blockFrames;
     if (timeInfoMode)
@@ -631,6 +625,13 @@ void pwarASIO::switchBuffersFromPwarPacket(const rt_stream_packet_t& packet)
     else {
         callbacks->bufferSwitch(toggle, ASIOFalse);
     }
+
+    float* outputSamplesCh1 = outputBuffers[0] + (toggle ? blockFrames : 0);
+    float* outputSamplesCh2 = outputBuffers[1] + (toggle ? blockFrames : 0);
+
+    out_packet.n_samples = blockFrames;
+    memcpy(out_packet.samples_ch1, outputSamplesCh1, out_packet.n_samples * sizeof(float));
+    memcpy(out_packet.samples_ch2, outputSamplesCh2, out_packet.n_samples * sizeof(float));
 
     out_packet.seq = packet.seq; // Copy sequence number
 
