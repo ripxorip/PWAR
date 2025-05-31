@@ -586,7 +586,7 @@ void pwarASIO::bufferSwitch ()
 		// Prepare packet
 		rt_stream_packet_t packet;
 		float* outputSamples = outputBuffers[0] + (toggle ? blockFrames : 0);
-		packet.n_samples = (blockFrames < blockFrames) ? blockFrames : blockFrames;
+		packet.n_samples = blockFrames;
 		memcpy(packet.samples, outputSamples, packet.n_samples * sizeof(float));
 		for (size_t i = packet.n_samples; i < blockFrames; ++i) {
 			packet.samples[i] = 0.0f;
@@ -603,7 +603,6 @@ void pwarASIO::bufferSwitch ()
 
 void pwarASIO::switchBuffersFromPwarPacket(const rt_stream_packet_t& packet)
 {
-
     size_t to_copy = (blockFrames < packet.n_samples) ? blockFrames : packet.n_samples;
     for (long i = 0; i < activeInputs; i++) {
         float* dest = inputBuffers[i] + (toggle ? blockFrames : 0);
@@ -617,7 +616,7 @@ void pwarASIO::switchBuffersFromPwarPacket(const rt_stream_packet_t& packet)
     out_packet.ts_pipewire_send = packet.ts_pipewire_send; // Copy PipeWire send timestamp
 
     float* outputSamples = outputBuffers[0] + (toggle ? blockFrames : 0);
-    out_packet.n_samples = (blockFrames < blockFrames) ? blockFrames : blockFrames;
+    out_packet.n_samples = blockFrames;
     memcpy(out_packet.samples, outputSamples, out_packet.n_samples * sizeof(float));
     for (size_t i = out_packet.n_samples; i < blockFrames; ++i) {
         out_packet.samples[i] = 0.0f;
