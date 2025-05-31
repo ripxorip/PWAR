@@ -11,7 +11,7 @@
 
 enum
 {
-	kBlockFrames = 256,
+	kBlockFrames = 128,
 	kNumInputs = 16,
 	kNumOutputs = 16
 };

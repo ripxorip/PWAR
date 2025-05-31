@@ -225,8 +225,8 @@ ASIOError pwarASIO::getChannels (long *numInputChannels, long *numOutputChannels
 //------------------------------------------------------------------------------------------
 ASIOError pwarASIO::getLatencies (long *_inputLatency, long *_outputLatency)
 {
-	*_inputLatency = inputLatency;
-	*_outputLatency = outputLatency;
+    *_inputLatency = blockFrames;		// typically
+	*_outputLatency = blockFrames * 2;
 	return ASE_OK;
 }
 
@@ -234,7 +234,9 @@ ASIOError pwarASIO::getLatencies (long *_inputLatency, long *_outputLatency)
 ASIOError pwarASIO::getBufferSize (long *minSize, long *maxSize,
 	long *preferredSize, long *granularity)
 {
-	*minSize = *maxSize = *preferredSize = blockFrames; // allow this size only
+	*minSize = 64;
+    *maxSize = 256;
+    *preferredSize = 128;
 	*granularity = 0;
 	return ASE_OK;
 }
@@ -584,9 +586,9 @@ void pwarASIO::bufferSwitch ()
 		// Prepare packet
 		rt_stream_packet_t packet;
 		float* outputSamples = outputBuffers[0] + (toggle ? blockFrames : 0);
-		packet.n_samples = (blockFrames < 256) ? blockFrames : 256;
+		packet.n_samples = (blockFrames < blockFrames) ? blockFrames : blockFrames;
 		memcpy(packet.samples, outputSamples, packet.n_samples * sizeof(float));
-		for (size_t i = packet.n_samples; i < 256; ++i) {
+		for (size_t i = packet.n_samples; i < blockFrames; ++i) {
 			packet.samples[i] = 0.0f;
 		}
 		output(packet);
@@ -615,9 +617,9 @@ void pwarASIO::switchBuffersFromPwarPacket(const rt_stream_packet_t& packet)
     out_packet.ts_pipewire_send = packet.ts_pipewire_send; // Copy PipeWire send timestamp
 
     float* outputSamples = outputBuffers[0] + (toggle ? blockFrames : 0);
-    out_packet.n_samples = (blockFrames < 256) ? blockFrames : 256;
+    out_packet.n_samples = (blockFrames < blockFrames) ? blockFrames : blockFrames;
     memcpy(out_packet.samples, outputSamples, out_packet.n_samples * sizeof(float));
-    for (size_t i = out_packet.n_samples; i < 256; ++i) {
+    for (size_t i = out_packet.n_samples; i < blockFrames; ++i) {
         out_packet.samples[i] = 0.0f;
     }
 
