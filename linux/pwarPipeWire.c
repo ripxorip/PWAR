@@ -22,8 +22,8 @@
 
  #include "pwar_packet.h"
 
-#define STREAM_IP "192.168.66.3"
-#define STREAM_PORT 8321
+#define DEFAULT_STREAM_IP "192.168.66.3"
+#define DEFAULT_STREAM_PORT 8321
   
  struct data;
   
@@ -54,7 +54,7 @@
  };
 
 
- void setup_recv_socket(struct data *data)
+ void setup_recv_socket(struct data *data, int port)
 {
     data->recv_sockfd = socket(AF_INET, SOCK_DGRAM, 0);
     if (data->recv_sockfd < 0) {
@@ -64,7 +64,7 @@
     struct sockaddr_in recv_addr = {0};
     recv_addr.sin_family = AF_INET;
     recv_addr.sin_addr.s_addr = INADDR_ANY;
-    recv_addr.sin_port = htons(STREAM_PORT);
+    recv_addr.sin_port = htons(port);
     if (bind(data->recv_sockfd, (struct sockaddr *)&recv_addr, sizeof(recv_addr)) < 0) {
         perror("recv socket bind failed");
         exit(EXIT_FAILURE);
@@ -104,9 +104,8 @@ void *receiver_thread(void *userdata) {
     return NULL;
 }
   
- void setup_socket(void *userdata)
- {
-    struct data *data = userdata;
+void setup_socket(struct data *data, const char *ip, int port)
+{
      // Create a socket
      data->sockfd = socket(AF_INET, SOCK_DGRAM, 0);
      if (data->sockfd < 0)
@@ -118,8 +117,8 @@ void *receiver_thread(void *userdata) {
      // Set up the server address
      memset(&data->servaddr, 0, sizeof(data->servaddr));
      data->servaddr.sin_family = AF_INET;
-     data->servaddr.sin_port = htons(STREAM_PORT);
-     data->servaddr.sin_addr.s_addr = inet_addr(STREAM_IP);
+     data->servaddr.sin_port = htons(port);
+     data->servaddr.sin_addr.s_addr = inet_addr(ip);
  }
 
 static void stream_buffer(float *samples, uint32_t n_samples, void *userdata)
@@ -248,6 +247,21 @@ static void stream_buffer(float *samples, uint32_t n_samples, void *userdata)
   
  int main(int argc, char *argv[])
  {
+        char stream_ip[64] = DEFAULT_STREAM_IP;
+        int stream_port = DEFAULT_STREAM_PORT;
+        int test_mode = 0; // Default is 0
+
+        for (int i = 1; i < argc; ++i) {
+            if ((strcmp(argv[i], "--ip") == 0 || strcmp(argv[i], "-i") == 0) && i + 1 < argc) {
+                strncpy(stream_ip, argv[++i], sizeof(stream_ip) - 1);
+                stream_ip[sizeof(stream_ip) - 1] = '\0';
+            } else if ((strcmp(argv[i], "--port") == 0 || strcmp(argv[i], "-p") == 0) && i + 1 < argc) {
+                stream_port = atoi(argv[++i]);
+            } else if ((strcmp(argv[i], "--test") == 0) || (strcmp(argv[i], "-t") == 0)) {
+                test_mode = 1;
+            }
+        }
+
         char latency[20];
         sprintf(latency, "%d/48000", 128);
         setenv("PIPEWIRE_LATENCY", latency, 1);
@@ -258,9 +272,8 @@ static void stream_buffer(float *samples, uint32_t n_samples, void *userdata)
          uint8_t buffer[1024];
          struct spa_pod_builder b = SPA_POD_BUILDER_INIT(buffer, sizeof(buffer));
 
-         setup_socket(&data);
-
-         setup_recv_socket(&data);  // for receiving
+         setup_socket(&data, stream_ip, stream_port);
+         setup_recv_socket(&data, stream_port);
 
          pthread_mutex_init(&data.packet_mutex, NULL);
          pthread_cond_init(&data.packet_cond, NULL);
@@ -278,7 +291,7 @@ static void stream_buffer(float *samples, uint32_t n_samples, void *userdata)
          pw_loop_add_signal(pw_main_loop_get_loop(data.loop), SIGINT, do_quit, &data);
          pw_loop_add_signal(pw_main_loop_get_loop(data.loop), SIGTERM, do_quit, &data);
 
-         data.test_mode = 0; // Enable test mode for sine wave generation
+         data.test_mode = test_mode; // Enable test mode for sine wave generation
          data.sine_phase = 0.0f; // Initialize sine phase
   
          /* Create a simple filter, the simple filter manages the core and remote
