@@ -8,6 +8,8 @@
 #include <stdio.h>
 #include <string.h>
 #include <chrono>
+#include <fstream>
+#include <sstream>
 #include "pwarASIO.h"
 #include "pwarASIOLog.h"
 #include "../../protocol/pwar_packet.h"
@@ -105,7 +107,7 @@ pwarASIO::pwarASIO (LPUNKNOWN pUnk, HRESULT *phr)
 	: CUnknown("PWARASIO", pUnk, phr)
 {
     pwarASIOLog logger("10.0.0.171", 1338);
-	long i;
+    long i;
 
 	blockFrames = kBlockFrames;
 	inputLatency = blockFrames;		// typically
@@ -135,6 +137,7 @@ pwarASIO::pwarASIO (LPUNKNOWN pUnk, HRESULT *phr)
 	callbacks = 0;
 	activeInputs = activeOutputs = 0;
 	toggle = 0;
+    parseConfigFile();
     initUdpSender();
     startUdpListener();
 }
@@ -234,9 +237,8 @@ ASIOError pwarASIO::getLatencies (long *_inputLatency, long *_outputLatency)
 ASIOError pwarASIO::getBufferSize (long *minSize, long *maxSize,
 	long *preferredSize, long *granularity)
 {
-	*minSize = 64;
-    *maxSize = 256;
-    *preferredSize = 128;
+    // Currently locked to 128, can be configurable in the future.
+	*minSize = *maxSize = *preferredSize = 128; // fixed size
 	*granularity = 0;
 	return ASE_OK;
 }
@@ -741,7 +743,34 @@ void pwarASIO::stopUdpListener() {
     }
 }
 
+void pwarASIO::parseConfigFile() {
+    // Only check user home directory for config file
+    std::string configPath;
+    char* home = getenv("USERPROFILE");
+    if (home && *home) {
+        configPath = std::string(home) + "\\pwarASIO.cfg";
+    } else {
+        configPath = "pwarASIO.cfg";
+    }
+    std::ifstream cfg(configPath);
+    if (cfg.is_open()) {
+        std::string line;
+        while (std::getline(cfg, line)) {
+            std::istringstream iss(line);
+            std::string key, value;
+            if (std::getline(iss, key, '=') && std::getline(iss, value)) {
+                if (key == "udp_send_ip") {
+                    udpSendIp = value;
+                    pwarASIOLog::Send("Read ip from config");
+                }
+            }
+        }
+    }
+    // If file is not found, udpSendIp remains default
+}
+
 void pwarASIO::initUdpSender() {
+    int udp_port = 8321; // hardcoded
     if (!udpWSAInitialized) {
         WSADATA wsaData;
         if (WSAStartup(MAKEWORD(2,2), &wsaData) == 0) {
@@ -753,8 +782,8 @@ void pwarASIO::initUdpSender() {
         if (udpSendSocket != INVALID_SOCKET) {
             memset(&udpSendAddr, 0, sizeof(udpSendAddr));
             udpSendAddr.sin_family = AF_INET;
-            udpSendAddr.sin_port = htons(8321);
-            inet_pton(AF_INET, "192.168.66.2", &udpSendAddr.sin_addr);
+            udpSendAddr.sin_port = htons(udp_port);
+            inet_pton(AF_INET, udpSendIp.c_str(), &udpSendAddr.sin_addr);
         }
     }
 }

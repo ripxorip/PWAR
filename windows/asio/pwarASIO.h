@@ -3,6 +3,7 @@
 
 #include "asiosys.h"
 #include <thread>
+#include <string>
 #include "../../protocol/pwar_packet.h"
 
 #define TESTWAVES 1
@@ -150,6 +151,9 @@ friend void myTimer();
     struct sockaddr_in udpSendAddr;
     void initUdpSender();
     void closeUdpSender();
+
+    std::string udpSendIp = "192.168.66.2";
+    void parseConfigFile();
 };
 
 #endif
