@@ -6,18 +6,12 @@
 #include <string>
 #include "../../protocol/pwar_packet.h"
 
-#define TESTWAVES 1
-// when true, will feed the left input (to host) with
-// a sine wave, and the right one with a sawtooth
-
 enum
 {
 	kBlockFrames = 128,
-	kNumInputs = 16,
-	kNumOutputs = 16
+	kNumInputs = 1,
+	kNumOutputs = 2
 };
-
-#if WINDOWS
 
 #include "rpc.h"
 #include "rpcndr.h"
@@ -50,17 +44,6 @@ public:
 	static CUnknown *CreateInstance(LPUNKNOWN pUnk, HRESULT *phr);
 	// IUnknown
 	virtual HRESULT STDMETHODCALLTYPE NonDelegatingQueryInterface(REFIID riid,void **ppvObject);
-#else
-
-#include "asiodrvr.h"
-
-//---------------------------------------------------------------------------------------------
-class pwarASIO : public AsioDriver
-{
-public:
-	pwarASIO ();
-	~pwarASIO ();
-#endif
 
 	ASIOBool init (void* sysRef);
 	void getDriverName (char *name);	// max 32 bytes incl. terminating zero
@@ -92,22 +75,10 @@ public:
 	ASIOError future (long selector, void *opt);
 	ASIOError outputReady ();
 
-	void bufferSwitch ();
 	long getMilliSeconds () {return milliSeconds;}
 
 private:
-friend void myTimer();
 
-	bool inputOpen ();
-#if TESTWAVES
-	void makeSine (float *wave);
-	void makeSaw (float *wave);
-#endif
-	void inputClose ();
-	void input ();
-
-	bool outputOpen ();
-	void outputClose ();
 	void output(const rt_stream_packet_t& packet);
 
 	void timerOn ();
@@ -121,9 +92,7 @@ friend void myTimer();
 	ASIOTimeStamp theSystemTime;
 	float *inputBuffers[kNumInputs * 2];
 	float *outputBuffers[kNumOutputs * 2];
-#if TESTWAVES
-    float *sineWave, *sawTooth;
-#endif
+
 	long inMap[kNumInputs];
 	long outMap[kNumOutputs];
 	long blockFrames;

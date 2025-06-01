@@ -17,23 +17,11 @@
 
 //------------------------------------------------------------------------------------------
 
-// extern
-void getNanoSeconds(ASIOTimeStamp *time);
-
 // local
-
-double AsioSamples2double (ASIOSamples* samples);
 
 static const double twoRaisedTo32 = 4294967296.;
 static const double twoRaisedTo32Reciprocal = 1. / twoRaisedTo32;
 
-//------------------------------------------------------------------------------------------
-// on windows, we do the COM stuff.
-
-#if WINDOWS
-
-// class id. !!! NOTE: !!! you will obviously have to create your own class id!
-// {188135E1-D565-11d2-854F-00A0C99F5D19}
 CLSID IID_ASIO_DRIVER = { 0x188135e1, 0xd565, 0x11d2, { 0x85, 0x4f, 0x0, 0xa0, 0xc9, 0x9f, 0x5d, 0x19 } };
 
 CFactoryTemplate g_Templates[1] = {
@@ -115,7 +103,7 @@ pwarASIO::pwarASIO (LPUNKNOWN pUnk, HRESULT *phr)
 	// typically blockFrames * 2; try to get 1 by offering direct buffer
 	// access, and using asioPostOutput for lower latency
 	samplePosition = 0;
-	sampleRate = 44100.;
+	sampleRate = 48000.;
 	milliSeconds = (long)((double)(kBlockFrames * 1000) / sampleRate);
 	active = false;
 	started = false;
@@ -126,9 +114,6 @@ pwarASIO::pwarASIO (LPUNKNOWN pUnk, HRESULT *phr)
 		inputBuffers[i] = 0;
 		inMap[i] = 0;
 	}
-#if TESTWAVES
-	sawTooth = sineWave = 0;
-#endif
 	for (i = 0; i < kNumOutputs; i++)
 	{
 		outputBuffers[i] = 0;
@@ -148,16 +133,13 @@ pwarASIO::~pwarASIO ()
     closeUdpSender();
     stopUdpListener();
 	stop ();
-	outputClose ();
-	inputClose ();
 	disposeBuffers ();
 }
 
 //------------------------------------------------------------------------------------------
 void pwarASIO::getDriverName (char *name)
 {
-	strcpy (name, "Sample ASIO");
-    pwarASIOLog::Send("pwarASIO::getDriverName called");
+	strcpy (name, "PWAR ASIO Driver");
 }
 
 //------------------------------------------------------------------------------------------
@@ -176,21 +158,7 @@ void pwarASIO::getErrorMessage (char *string)
 ASIOBool pwarASIO::init (void* sysRef)
 {
 	sysRef = sysRef;
-	if (active)
-		return true;
-	strcpy (errorMessage, "ASIO Driver open Failure!");
-	if (inputOpen ())
-	{
-		if (outputOpen ())
-		{
-			active = true;
-			return true;
-		}
-	}
-	timerOff (); // de-activate 'hardware'
-	outputClose ();
-	inputClose ();
-	return false;
+    return true;
 }
 
 //------------------------------------------------------------------------------------------
@@ -202,7 +170,6 @@ ASIOError pwarASIO::start ()
 		samplePosition = 0;
 		theSystemTime.lo = theSystemTime.hi = 0;
 		toggle = 0;
-		//timerOn (); // activate 'hardware'
 		started = true;
 		return ASE_OK;
 	}
@@ -213,7 +180,6 @@ ASIOError pwarASIO::start ()
 ASIOError pwarASIO::stop ()
 {
 	started = false;
-	timerOff (); // de-activate 'hardware'
 	return ASE_OK;
 }
 
@@ -322,16 +288,14 @@ ASIOError pwarASIO::getChannelInfo (ASIOChannelInfo *info)
 {
 	if (info->channel < 0 || (info->isInput ? info->channel >= kNumInputs : info->channel >= kNumOutputs))
 		return ASE_InvalidParameter;
-#if WINDOWS
 	info->type = ASIOSTFloat32LSB;
-#else
-	info->type = ASIOSTInt16MSB;
-#endif
+
 	info->channelGroup = 0;
 	info->isActive = ASIOFalse;
 	long i;
 	if (info->isInput)
 	{
+	    strcpy(info->name, "Input ");
 		for (i = 0; i < activeInputs; i++)
 		{
 			if (inMap[i] == info->channel)
@@ -343,6 +307,7 @@ ASIOError pwarASIO::getChannelInfo (ASIOChannelInfo *info)
 	}
 	else
 	{
+	    strcpy(info->name, "Output ");
 		for (i = 0; i < activeOutputs; i++)
 		{
 			if (outMap[i] == info->channel)
@@ -352,7 +317,6 @@ ASIOError pwarASIO::getChannelInfo (ASIOChannelInfo *info)
 			}
 		}
 	}
-	strcpy(info->name, "Sample ");
 	return ASE_OK;
 }
 
@@ -479,95 +443,10 @@ ASIOError pwarASIO::future (long selector, void* opt) // !!! check properties
 //--------------------------------------------------------------------------------------------------------
 // private methods
 //--------------------------------------------------------------------------------------------------------
-//--------------------------------------------------------------------------------------------------------
-// input
-//--------------------------------------------------------------------------------------------------------
-//---------------------------------------------------------------------------------------------
-bool pwarASIO::inputOpen ()
-{
-#if TESTWAVES
-    sineWave = new float[blockFrames];
-    if (!sineWave)
-    {
-        strcpy (errorMessage, "ASIO Sample Driver: Out of Memory!");
-        return false;
-    }
-    makeSine (sineWave);
-    sawTooth = new float[blockFrames];
-    if (!sawTooth)
-    {
-        strcpy(errorMessage, "ASIO Sample Driver: Out of Memory!");
-        return false;
-    }
-    makeSaw(sawTooth);
-#endif
-    return true;
-}
-#if TESTWAVES
-#include <math.h>
-const double pi = 0.3141592654;
-void pwarASIO::makeSine (float *wave)
-{
-    double frames = (double)blockFrames;
-    double i, f = (pi * 2.) / frames;
-    for (i = 0; i < frames; i++)
-        *wave++ = (float)sin(f * i);
-}
-void pwarASIO::makeSaw(float *wave)
-{
-    double frames = (double)blockFrames;
-    double i, f = 2. / frames;
-    for (i = 0; i < frames; i++)
-        *wave++ = (float)(-1. + f * i);
-}
-#endif
-//---------------------------------------------------------------------------------------------
-void pwarASIO::inputClose ()
-{
-#if TESTWAVES
-    if (sineWave)
-        delete[] sineWave;
-    sineWave = 0;
-    if (sawTooth)
-        delete[] sawTooth;
-    sawTooth = 0;
-#endif
-}
-//---------------------------------------------------------------------------------------------
-void pwarASIO::input()
-{
-#if TESTWAVES
-    long i;
-    float *in = 0;
-    for (i = 0; i < activeInputs; i++)
-    {
-        in = inputBuffers[i];
-        if (in)
-        {
-            if (toggle)
-                in += blockFrames;
-            if ((i & 1) && sawTooth)
-                memcpy(in, sawTooth, (unsigned long)(blockFrames * sizeof(float)));
-            else if (sineWave)
-                memcpy(in, sineWave, (unsigned long)(blockFrames * sizeof(float)));
-        }
-    }
-#endif
-}
+
 //------------------------------------------------------------------------------------------------------------------
 // output
 //------------------------------------------------------------------------------------------------------------------
-
-//---------------------------------------------------------------------------------------------
-bool pwarASIO::outputOpen()
-{
-	return true;
-}
-
-//---------------------------------------------------------------------------------------------
-void pwarASIO::outputClose ()
-{
-}
 
 //---------------------------------------------------------------------------------------------
 // Refactored output to take a packet parameter
@@ -579,31 +458,6 @@ void pwarASIO::output(const rt_stream_packet_t& packet)
 }
 
 //---------------------------------------------------------------------------------------------
-void pwarASIO::bufferSwitch ()
-{
-	if (started && callbacks)
-	{
-      /*
-		getNanoSeconds(&theSystemTime); // latch system time
-		input();
-		// Prepare packet
-		rt_stream_packet_t packet;
-		float* outputSamples = outputBuffers[0] + (toggle ? blockFrames : 0);
-		packet.n_samples = blockFrames;
-		memcpy(packet.samples, outputSamples, packet.n_samples * sizeof(float));
-		for (size_t i = packet.n_samples; i < blockFrames; ++i) {
-			packet.samples[i] = 0.0f;
-		}
-		output(packet);
-		samplePosition += blockFrames;
-		if (timeInfoMode)
-			bufferSwitchX ();
-		else
-			callbacks->bufferSwitch (toggle, ASIOFalse);
-		toggle = toggle ? 0 : 1;
-        */
-	}
-}
 
 void pwarASIO::switchBuffersFromPwarPacket(const rt_stream_packet_t& packet)
 {
@@ -665,15 +519,6 @@ void pwarASIO::bufferSwitchX ()
 ASIOError pwarASIO::outputReady ()
 {
 	return ASE_NotPresent;
-}
-
-//---------------------------------------------------------------------------------------------
-double AsioSamples2double (ASIOSamples* samples)
-{
-	double a = (double)(samples->lo);
-	if (samples->hi)
-		a += (double)(samples->hi) * twoRaisedTo32;
-	return a;
 }
 
 //---------------------------------------------------------------------------------------------
@@ -798,6 +643,3 @@ void pwarASIO::closeUdpSender() {
         udpWSAInitialized = false;
     }
 }
-
-#endif // WINDOWS
-
