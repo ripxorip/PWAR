@@ -1,3 +1,10 @@
+/*
+ * pwarASIOLog.cpp - PipeWire ASIO Relay (PWAR) project
+ *
+ * (c) 2025 Philip K. Gisslow
+ * This file is part of the PipeWire ASIO Relay (PWAR) project.
+ */
+
 #include "pwarASIOLog.h"
 #include <winsock2.h>
 #include <ws2tcpip.h>

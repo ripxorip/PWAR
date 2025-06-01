@@ -1,3 +1,10 @@
+/*
+ * pwarASIO.h - PipeWire ASIO Relay (PWAR) project
+ *
+ * (c) 2025 Philip K. Gisslow
+ * This file is part of the PipeWire ASIO Relay (PWAR) project.
+ */
+
 #ifndef __PWAR_ASIO_H__
 #define __PWAR_ASIO_H__
 

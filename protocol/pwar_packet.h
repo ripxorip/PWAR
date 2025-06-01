@@ -1,3 +1,10 @@
+/*
+ * pwar_packet.h - PipeWire ASIO Relay (PWAR) project
+ *
+ * (c) 2025 Philip K. Gisslow
+ * This file is part of the PipeWire ASIO Relay (PWAR) project.
+ */
+
 #ifndef RT_STREAM_PACKET_H
 #define RT_STREAM_PACKET_H
 
@@ -16,4 +23,4 @@ typedef struct {
     float samples_ch2[RT_STREAM_PACKET_FRAME_SIZE/2];
 } rt_stream_packet_t;
 
-#endif // RT_STREAM_PACKET_H%
+#endif // RT_STREAM_PACKET_H

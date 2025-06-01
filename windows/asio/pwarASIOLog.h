@@ -1,3 +1,10 @@
+/*
+ * pwarASIOLog.h - PipeWire ASIO Relay (PWAR) project
+ *
+ * (c) 2025 Philip K. Gisslow
+ * This file is part of the PipeWire ASIO Relay (PWAR) project.
+ */
+
 #pragma once
 #include <string>
 
