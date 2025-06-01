@@ -1,5 +1,5 @@
 LIBRARY			pwarASIO
-DESCRIPTION		'ASIO Sample Driver'
+DESCRIPTION		'PipeWire ASIO Relay'
 PROTMODE
 EXPORTS	
 				DllMain
