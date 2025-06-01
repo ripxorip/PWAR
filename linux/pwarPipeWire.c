@@ -1,67 +1,70 @@
- #include <stdio.h>
- #include <errno.h>
- #include <math.h>
- #include <signal.h>
+/*
+ * pwarPipeWire.c - PipeWire <-> UDP streaming bridge for PWAR
+ *
+ * (c) 2025 Philip K. Gisslow
+ * This file is part of the PipeWire ASIO Relay (PWAR) project.
+ */
 
+#include <stdio.h>
+#include <stdlib.h>
 #include <errno.h>
 #include <math.h>
 #include <signal.h>
+#include <string.h>
 #include <time.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
 #include <pthread.h>
 #include <unistd.h>
-
-
- #include <spa/pod/builder.h>
- #include <spa/param/latency-utils.h>
-  
- #include <pipewire/pipewire.h>
- #include <pipewire/filter.h>
-
- #include "pwar_packet.h"
+#include <spa/pod/builder.h>
+#include <spa/param/latency-utils.h>
+#include <pipewire/pipewire.h>
+#include <pipewire/filter.h>
+#include "pwar_packet.h"
 
 #define DEFAULT_STREAM_IP "192.168.66.3"
 #define DEFAULT_STREAM_PORT 8321
-  
- struct data;
-  
- struct port {
-         struct data *data;
- };
-  
- struct data {
-         struct pw_main_loop *loop;
-         struct pw_filter *filter;
-         struct port *in_port;
-         struct port *left_out_port;
-         struct port *right_out_port;
-         float sine_phase;
-         uint8_t test_mode;
 
-         uint32_t seq;
-         int sockfd;
-         struct sockaddr_in servaddr;
+struct data;
 
-         int recv_sockfd; // receive socket
+struct port {
+    struct data *data;
+};
 
-         pthread_mutex_t packet_mutex;
-         pthread_cond_t packet_cond;
+struct data {
+    struct pw_main_loop *loop;
+    struct pw_filter *filter;
+    struct port *in_port;
+    struct port *left_out_port;
+    struct port *right_out_port;
+    float sine_phase;
+    uint8_t test_mode;
+    uint32_t seq;
+    int sockfd;
+    struct sockaddr_in servaddr;
+    int recv_sockfd;
+    pthread_mutex_t packet_mutex;
+    pthread_cond_t packet_cond;
+    rt_stream_packet_t latest_packet;
+    int packet_available;
+};
 
-         rt_stream_packet_t latest_packet;
-         int packet_available;
- };
+static void setup_recv_socket(struct data *data, int port);
+static void *receiver_thread(void *userdata);
+static void setup_socket(struct data *data, const char *ip, int port);
+static void stream_buffer(float *samples, uint32_t n_samples, void *userdata);
+static void on_process(void *userdata, struct spa_io_position *position);
+static void do_quit(void *userdata, int signal_number);
 
-
- void setup_recv_socket(struct data *data, int port)
-{
+static void setup_recv_socket(struct data *data, int port) {
     data->recv_sockfd = socket(AF_INET, SOCK_DGRAM, 0);
     if (data->recv_sockfd < 0) {
         perror("recv socket creation failed");
         exit(EXIT_FAILURE);
     }
-    struct sockaddr_in recv_addr = {0};
+    struct sockaddr_in recv_addr;
+    memset(&recv_addr, 0, sizeof(recv_addr));
     recv_addr.sin_family = AF_INET;
     recv_addr.sin_addr.s_addr = INADDR_ANY;
     recv_addr.sin_port = htons(port);
@@ -71,12 +74,12 @@
     }
 }
 
-void *receiver_thread(void *userdata) {
-    struct data *data = userdata;
+static void *receiver_thread(void *userdata) {
+    struct data *data = (struct data *)userdata;
     rt_stream_packet_t packet;
     while (1) {
         ssize_t n = recvfrom(data->recv_sockfd, &packet, sizeof(packet), 0, NULL, NULL);
-        if (n == sizeof(packet)) {
+        if (n == (ssize_t)sizeof(packet)) {
             pthread_mutex_lock(&data->packet_mutex);
             data->latest_packet = packet;
             data->packet_available = 1;
@@ -85,288 +88,191 @@ void *receiver_thread(void *userdata) {
 
             struct timespec ts;
             clock_gettime(CLOCK_MONOTONIC, &ts);
-            uint64_t ts_return = ts.tv_sec * 1000000000 + ts.tv_nsec;
-
+            uint64_t ts_return = (uint64_t)ts.tv_sec * 1000000000 + ts.tv_nsec;
             uint64_t total_latency = ts_return - packet.ts_pipewire_send;
             uint64_t daw_latency = packet.ts_asio_send - packet.ts_pipewire_send;
             uint64_t network_latency = total_latency - daw_latency;
-
-            // Convert these latencies to milliseconds
             double total_latency_ms = total_latency / 1000000.0;
             double daw_latency_ms = daw_latency / 1000000.0;
             double network_latency_ms = network_latency / 1000000.0;
-
             printf("Received packet seq: %lu, Total Latency: %.2f ms, DAW Latency: %.2f ms, Network Latency: %.2f ms\n",
                    packet.seq, total_latency_ms, daw_latency_ms, network_latency_ms);
-
         }
     }
     return NULL;
 }
-  
-void setup_socket(struct data *data, const char *ip, int port)
-{
-     // Create a socket
-     data->sockfd = socket(AF_INET, SOCK_DGRAM, 0);
-     if (data->sockfd < 0)
-     {
-         perror("socket creation failed");
-         exit(EXIT_FAILURE);
-     }
- 
-     // Set up the server address
-     memset(&data->servaddr, 0, sizeof(data->servaddr));
-     data->servaddr.sin_family = AF_INET;
-     data->servaddr.sin_port = htons(port);
-     data->servaddr.sin_addr.s_addr = inet_addr(ip);
- }
 
-static void stream_buffer(float *samples, uint32_t n_samples, void *userdata)
-{
-    struct data *data = userdata;
+static void setup_socket(struct data *data, const char *ip, int port) {
+    data->sockfd = socket(AF_INET, SOCK_DGRAM, 0);
+    if (data->sockfd < 0) {
+        perror("socket creation failed");
+        exit(EXIT_FAILURE);
+    }
+    memset(&data->servaddr, 0, sizeof(data->servaddr));
+    data->servaddr.sin_family = AF_INET;
+    data->servaddr.sin_port = htons(port);
+    data->servaddr.sin_addr.s_addr = inet_addr(ip);
+}
+
+static void stream_buffer(float *samples, uint32_t n_samples, void *userdata) {
+    struct data *data = (struct data *)userdata;
     rt_stream_packet_t packet;
-
-    packet.seq = data->seq;
-    data->seq += 1;
-
+    packet.seq = data->seq++;
     packet.n_samples = n_samples;
     memcpy(packet.samples_ch1, samples, n_samples * sizeof(float));
-
     struct timespec ts;
     clock_gettime(CLOCK_MONOTONIC, &ts);
-    uint64_t timestamp = ts.tv_sec * 1000000000 + ts.tv_nsec;
-
+    uint64_t timestamp = (uint64_t)ts.tv_sec * 1000000000 + ts.tv_nsec;
     packet.ts_pipewire_send = timestamp;
-
-    // Send the packet
-    if (sendto(data->sockfd, &packet, sizeof(packet), 0, (struct sockaddr *)&data->servaddr, sizeof(data->servaddr)) < 0)
-    {
+    if (sendto(data->sockfd, &packet, sizeof(packet), 0, (struct sockaddr *)&data->servaddr, sizeof(data->servaddr)) < 0) {
         perror("sendto failed");
     }
 }
 
- /* our data processing function is in general:
-  *
-  *  struct pw_buffer *b;
-  *  in = pw_filter_dequeue_buffer(filter, in_port);
-  *  out = pw_filter_dequeue_buffer(filter, out_port);
-  *
-  *  .. do stuff with buffers ...
-  *
-  *  pw_filter_queue_buffer(filter, in_port, in);
-  *  pw_filter_queue_buffer(filter, out_port, out);
-  *
-  *  For DSP ports, there is a shortcut to directly dequeue, get
-  *  the data and requeue the buffer with pw_filter_get_dsp_buffer().
-  *
-  *
-  */
- // TODO Move the pwar processing here
- static void on_process(void *userdata, struct spa_io_position *position)
- {
-         struct data *data = userdata;
-         float *in, *left_out, *right_out;
-         uint32_t n_samples = position->clock.duration;
-  
-         pw_log_trace("do process %d", n_samples);
-  
-         in = pw_filter_get_dsp_buffer(data->in_port, n_samples);
-         left_out = pw_filter_get_dsp_buffer(data->left_out_port, n_samples);
-         right_out = pw_filter_get_dsp_buffer(data->right_out_port, n_samples);
-
-         if (data->test_mode)
-         {
-            for (uint32_t n = 0; n < n_samples; n++)
-            {
-                if (data->sine_phase >= 2 * M_PI)
-                    data->sine_phase -= 2 * M_PI;
-                in[n] = sinf(data->sine_phase) * 0.5f;
-                data->sine_phase += 2 * M_PI * 440 / 48000; // 440 Hz sine wave
-            }
-         }
-
-         stream_buffer(in, n_samples, data);
-  
-         int got_packet = 0;
-         struct timespec ts;
-         clock_gettime(CLOCK_REALTIME, &ts);
-         // Wait up to 2ms
-         ts.tv_nsec += 2 * 1000 * 1000;
-         if (ts.tv_nsec >= 1000000000)
-         {
-                 ts.tv_sec += 1;
-                 ts.tv_nsec -= 1000000000;
-         }
-         pthread_mutex_lock(&data->packet_mutex);
-         while (!data->packet_available)
-         {
-                 int rc = pthread_cond_timedwait(&data->packet_cond, &data->packet_mutex, &ts);
-                 if (rc == ETIMEDOUT)
-                         break;
-         }
-         if (data->packet_available)
-         {
-                 if(left_out != NULL)
-                 {
-                        memcpy(left_out, data->latest_packet.samples_ch1, n_samples * sizeof(float));
-                 }
-                 if (right_out != NULL)
-                 {
-                        memcpy(right_out, data->latest_packet.samples_ch2, n_samples * sizeof(float));
-                 }
-                 got_packet = 1;
-                 data->packet_available = 0;
-         }
-         pthread_mutex_unlock(&data->packet_mutex);
-
-         if (!got_packet)
-         {
-                printf("--- ERROR -- No valid packet received, outputting silence\n");
-                printf("I wanted seq: %u and got seq: %lu\n", data->seq - 1, data->latest_packet.seq);
-                if (left_out != NULL)
-                {
-                        memset(left_out, 0, n_samples * sizeof(float)); // output silence if no valid packet
-                }
-                if (right_out != NULL) {
-                        memset(right_out, 0, n_samples * sizeof(float)); // output silence if no valid packet
-                }
-         } 
-  
- }
-  
- static const struct pw_filter_events filter_events = {
-         PW_VERSION_FILTER_EVENTS,
-         .process = on_process,
- };
-  
- static void do_quit(void *userdata, int signal_number)
- {
-         struct data *data = userdata;
-         pw_main_loop_quit(data->loop);
- }
-  
- int main(int argc, char *argv[])
- {
-        char stream_ip[64] = DEFAULT_STREAM_IP;
-        int stream_port = DEFAULT_STREAM_PORT;
-        int test_mode = 0; // Default is 0
-
-        for (int i = 1; i < argc; ++i) {
-            if ((strcmp(argv[i], "--ip") == 0 || strcmp(argv[i], "-i") == 0) && i + 1 < argc) {
-                strncpy(stream_ip, argv[++i], sizeof(stream_ip) - 1);
-                stream_ip[sizeof(stream_ip) - 1] = '\0';
-            } else if ((strcmp(argv[i], "--port") == 0 || strcmp(argv[i], "-p") == 0) && i + 1 < argc) {
-                stream_port = atoi(argv[++i]);
-            } else if ((strcmp(argv[i], "--test") == 0) || (strcmp(argv[i], "-t") == 0)) {
-                test_mode = 1;
-            }
+static void on_process(void *userdata, struct spa_io_position *position) {
+    struct data *data = (struct data *)userdata;
+    float *in = pw_filter_get_dsp_buffer(data->in_port, position->clock.duration);
+    float *left_out = pw_filter_get_dsp_buffer(data->left_out_port, position->clock.duration);
+    float *right_out = pw_filter_get_dsp_buffer(data->right_out_port, position->clock.duration);
+    uint32_t n_samples = position->clock.duration;
+    if (data->test_mode) {
+        for (uint32_t n = 0; n < n_samples; n++) {
+            if (data->sine_phase >= 2 * M_PI)
+                data->sine_phase -= 2 * M_PI;
+            in[n] = sinf(data->sine_phase) * 0.5f;
+            data->sine_phase += 2 * M_PI * 440 / 48000;
         }
+    }
+    stream_buffer(in, n_samples, data);
+    int got_packet = 0;
+    struct timespec ts;
+    clock_gettime(CLOCK_REALTIME, &ts);
+    ts.tv_nsec += 2 * 1000 * 1000;
+    if (ts.tv_nsec >= 1000000000) {
+        ts.tv_sec += 1;
+        ts.tv_nsec -= 1000000000;
+    }
+    pthread_mutex_lock(&data->packet_mutex);
+    while (!data->packet_available) {
+        int rc = pthread_cond_timedwait(&data->packet_cond, &data->packet_mutex, &ts);
+        if (rc == ETIMEDOUT)
+            break;
+    }
+    if (data->packet_available) {
+        if (left_out)
+            memcpy(left_out, data->latest_packet.samples_ch1, n_samples * sizeof(float));
+        if (right_out)
+            memcpy(right_out, data->latest_packet.samples_ch2, n_samples * sizeof(float));
+        got_packet = 1;
+        data->packet_available = 0;
+    }
+    pthread_mutex_unlock(&data->packet_mutex);
+    if (!got_packet) {
+        fprintf(stderr, "--- ERROR -- No valid packet received, outputting silence\n");
+        fprintf(stderr, "I wanted seq: %u and got seq: %lu\n", data->seq - 1, data->latest_packet.seq);
+        if (left_out)
+            memset(left_out, 0, n_samples * sizeof(float));
+        if (right_out)
+            memset(right_out, 0, n_samples * sizeof(float));
+    }
+}
 
-        char latency[20];
-        sprintf(latency, "%d/48000", 128);
-        setenv("PIPEWIRE_LATENCY", latency, 1);
+static const struct pw_filter_events filter_events = {
+    PW_VERSION_FILTER_EVENTS,
+    .process = on_process,
+};
 
+static void do_quit(void *userdata, int signal_number) {
+    struct data *data = (struct data *)userdata;
+    pw_main_loop_quit(data->loop);
+}
 
-         struct data data = { 0, };
-         const struct spa_pod *params[1];
-         uint8_t buffer[1024];
-         struct spa_pod_builder b = SPA_POD_BUILDER_INIT(buffer, sizeof(buffer));
-
-         setup_socket(&data, stream_ip, stream_port);
-         setup_recv_socket(&data, stream_port);
-
-         pthread_mutex_init(&data.packet_mutex, NULL);
-         pthread_cond_init(&data.packet_cond, NULL);
-
-         data.packet_available = 0;
-         pthread_t recv_thread;
-         pthread_create(&recv_thread, NULL, receiver_thread, &data);
-  
-         pw_init(&argc, &argv);
-  
-         /* make a main loop. If you already have another main loop, you can add
-          * the fd of this pipewire mainloop to it. */
-         data.loop = pw_main_loop_new(NULL);
-  
-         pw_loop_add_signal(pw_main_loop_get_loop(data.loop), SIGINT, do_quit, &data);
-         pw_loop_add_signal(pw_main_loop_get_loop(data.loop), SIGTERM, do_quit, &data);
-
-         data.test_mode = test_mode; // Enable test mode for sine wave generation
-         data.sine_phase = 0.0f; // Initialize sine phase
-  
-         /* Create a simple filter, the simple filter manages the core and remote
-          * objects for you if you don't need to deal with them.
-          *
-          * Pass your events and a user_data pointer as the last arguments. This
-          * will inform you about the filter state. The most important event
-          * you need to listen to is the process event where you need to process
-          * the data.
-          */
-         data.filter = pw_filter_new_simple(
-                         pw_main_loop_get_loop(data.loop),
-                         "audio-filter",
-                         pw_properties_new(
-                                 PW_KEY_MEDIA_TYPE, "Audio",
-                                 PW_KEY_MEDIA_CATEGORY, "Filter",
-                                 PW_KEY_MEDIA_ROLE, "DSP",
-                                 NULL),
-                         &filter_events,
-                         &data);
-  
-         /* make an audio DSP input port */
-         data.in_port = pw_filter_add_port(data.filter,
-                         PW_DIRECTION_INPUT,
-                         PW_FILTER_PORT_FLAG_MAP_BUFFERS,
-                         sizeof(struct port),
-                         pw_properties_new(
-                                 PW_KEY_FORMAT_DSP, "32 bit float mono audio",
-                                 PW_KEY_PORT_NAME, "input",
-                                 NULL),
-                         NULL, 0);
-  
-         /* make an audio DSP output port */
-         data.left_out_port = pw_filter_add_port(data.filter,
-                         PW_DIRECTION_OUTPUT,
-                         PW_FILTER_PORT_FLAG_MAP_BUFFERS,
-                         sizeof(struct port),
-                         pw_properties_new(
-                                 PW_KEY_FORMAT_DSP, "32 bit float mono audio",
-                                 PW_KEY_PORT_NAME, "output-left",
-                                 NULL),
-                         NULL, 0);
-
-         data.right_out_port = pw_filter_add_port(data.filter,
-                         PW_DIRECTION_OUTPUT,
-                         PW_FILTER_PORT_FLAG_MAP_BUFFERS,
-                         sizeof(struct port),
-                         pw_properties_new(
-                                 PW_KEY_FORMAT_DSP, "32 bit float mono audio",
-                                 PW_KEY_PORT_NAME, "output-right",
-                                 NULL),
-                         NULL, 0);
-  
-         params[0] = spa_process_latency_build(&b,
-                         SPA_PARAM_ProcessLatency,
-                         &SPA_PROCESS_LATENCY_INFO_INIT(
-                                 .ns = 10 * SPA_NSEC_PER_MSEC
-                         ));
-  
-  
-         /* Now connect this filter. We ask that our process function is
-          * called in a realtime thread. */
-         if (pw_filter_connect(data.filter,
-                                 PW_FILTER_FLAG_RT_PROCESS,
-                                 params, 1) < 0) {
-                 fprintf(stderr, "can't connect\n");
-                 return -1;
-         }
-  
-         /* and wait while we let things run */
-         pw_main_loop_run(data.loop);
-  
-         pw_filter_destroy(data.filter);
-         pw_main_loop_destroy(data.loop);
-         pw_deinit();
-  
-         return 0;
- }
+int main(int argc, char *argv[]) {
+    char stream_ip[64] = DEFAULT_STREAM_IP;
+    int stream_port = DEFAULT_STREAM_PORT;
+    int test_mode = 0;
+    for (int i = 1; i < argc; ++i) {
+        if ((strcmp(argv[i], "--ip") == 0 || strcmp(argv[i], "-i") == 0) && i + 1 < argc) {
+            strncpy(stream_ip, argv[++i], sizeof(stream_ip) - 1);
+            stream_ip[sizeof(stream_ip) - 1] = '\0';
+        } else if ((strcmp(argv[i], "--port") == 0 || strcmp(argv[i], "-p") == 0) && i + 1 < argc) {
+            stream_port = atoi(argv[++i]);
+        } else if ((strcmp(argv[i], "--test") == 0) || (strcmp(argv[i], "-t") == 0)) {
+            test_mode = 1;
+        }
+    }
+    char latency[32];
+    snprintf(latency, sizeof(latency), "%d/48000", 128);
+    setenv("PIPEWIRE_LATENCY", latency, 1);
+    struct data data;
+    memset(&data, 0, sizeof(data));
+    const struct spa_pod *params[1];
+    uint8_t buffer[1024];
+    struct spa_pod_builder b = SPA_POD_BUILDER_INIT(buffer, sizeof(buffer));
+    setup_socket(&data, stream_ip, stream_port);
+    setup_recv_socket(&data, stream_port);
+    pthread_mutex_init(&data.packet_mutex, NULL);
+    pthread_cond_init(&data.packet_cond, NULL);
+    data.packet_available = 0;
+    pthread_t recv_thread;
+    pthread_create(&recv_thread, NULL, receiver_thread, &data);
+    pw_init(&argc, &argv);
+    data.loop = pw_main_loop_new(NULL);
+    pw_loop_add_signal(pw_main_loop_get_loop(data.loop), SIGINT, do_quit, &data);
+    pw_loop_add_signal(pw_main_loop_get_loop(data.loop), SIGTERM, do_quit, &data);
+    data.test_mode = test_mode;
+    data.sine_phase = 0.0f;
+    data.filter = pw_filter_new_simple(
+        pw_main_loop_get_loop(data.loop),
+        "audio-filter",
+        pw_properties_new(
+            PW_KEY_MEDIA_TYPE, "Audio",
+            PW_KEY_MEDIA_CATEGORY, "Filter",
+            PW_KEY_MEDIA_ROLE, "DSP",
+            NULL),
+        &filter_events,
+        &data);
+    data.in_port = pw_filter_add_port(data.filter,
+        PW_DIRECTION_INPUT,
+        PW_FILTER_PORT_FLAG_MAP_BUFFERS,
+        sizeof(struct port),
+        pw_properties_new(
+            PW_KEY_FORMAT_DSP, "32 bit float mono audio",
+            PW_KEY_PORT_NAME, "input",
+            NULL),
+        NULL, 0);
+    data.left_out_port = pw_filter_add_port(data.filter,
+        PW_DIRECTION_OUTPUT,
+        PW_FILTER_PORT_FLAG_MAP_BUFFERS,
+        sizeof(struct port),
+        pw_properties_new(
+            PW_KEY_FORMAT_DSP, "32 bit float mono audio",
+            PW_KEY_PORT_NAME, "output-left",
+            NULL),
+        NULL, 0);
+    data.right_out_port = pw_filter_add_port(data.filter,
+        PW_DIRECTION_OUTPUT,
+        PW_FILTER_PORT_FLAG_MAP_BUFFERS,
+        sizeof(struct port),
+        pw_properties_new(
+            PW_KEY_FORMAT_DSP, "32 bit float mono audio",
+            PW_KEY_PORT_NAME, "output-right",
+            NULL),
+        NULL, 0);
+    params[0] = spa_process_latency_build(&b,
+        SPA_PARAM_ProcessLatency,
+        &SPA_PROCESS_LATENCY_INFO_INIT(
+            .ns = 10 * SPA_NSEC_PER_MSEC
+        ));
+    if (pw_filter_connect(data.filter,
+            PW_FILTER_FLAG_RT_PROCESS,
+            params, 1) < 0) {
+        fprintf(stderr, "can't connect\n");
+        return -1;
+    }
+    pw_main_loop_run(data.loop);
+    pw_filter_destroy(data.filter);
+    pw_main_loop_destroy(data.loop);
+    pw_deinit();
+    return 0;
+}
