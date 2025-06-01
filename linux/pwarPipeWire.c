@@ -188,9 +188,6 @@ static void stream_buffer(float *samples, uint32_t n_samples, void *userdata)
 
          stream_buffer(in, n_samples, data);
   
-         if (in == NULL || left_out == NULL)
-                 return;
-
          int got_packet = 0;
          struct timespec ts;
          clock_gettime(CLOCK_REALTIME, &ts);
@@ -210,8 +207,14 @@ static void stream_buffer(float *samples, uint32_t n_samples, void *userdata)
          }
          if (data->packet_available)
          {
-                 memcpy(left_out, data->latest_packet.samples_ch1, n_samples * sizeof(float));
-                 memcpy(right_out, data->latest_packet.samples_ch2, n_samples * sizeof(float));
+                 if(left_out != NULL)
+                 {
+                        memcpy(left_out, data->latest_packet.samples_ch1, n_samples * sizeof(float));
+                 }
+                 if (right_out != NULL)
+                 {
+                        memcpy(right_out, data->latest_packet.samples_ch2, n_samples * sizeof(float));
+                 }
                  got_packet = 1;
                  data->packet_available = 0;
          }
@@ -221,8 +224,13 @@ static void stream_buffer(float *samples, uint32_t n_samples, void *userdata)
          {
                 printf("--- ERROR -- No valid packet received, outputting silence\n");
                 printf("I wanted seq: %u and got seq: %lu\n", data->seq - 1, data->latest_packet.seq);
-                memset(left_out, 0, n_samples * sizeof(float)); // output silence if no valid packet
-                memset(right_out, 0, n_samples * sizeof(float)); // output silence if no valid packet
+                if (left_out != NULL)
+                {
+                        memset(left_out, 0, n_samples * sizeof(float)); // output silence if no valid packet
+                }
+                if (right_out != NULL) {
+                        memset(right_out, 0, n_samples * sizeof(float)); // output silence if no valid packet
+                }
          } 
   
  }
@@ -270,7 +278,7 @@ static void stream_buffer(float *samples, uint32_t n_samples, void *userdata)
          pw_loop_add_signal(pw_main_loop_get_loop(data.loop), SIGINT, do_quit, &data);
          pw_loop_add_signal(pw_main_loop_get_loop(data.loop), SIGTERM, do_quit, &data);
 
-         data.test_mode = 1; // Enable test mode for sine wave generation
+         data.test_mode = 0; // Enable test mode for sine wave generation
          data.sine_phase = 0.0f; // Initialize sine phase
   
          /* Create a simple filter, the simple filter manages the core and remote
