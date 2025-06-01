@@ -126,5 +126,13 @@ Replace `192.168.66.3` with the IP address of the Windows ASIO host to stream to
 
 ---
 
+## 🤝 Contributing
+
+I have limited time to spend on this project, so contributions are very welcome! If you have improvements, bug fixes, or new features, please open a Pull Request (PR). I appreciate your help in making PWAR even better!
+
+⭐ If you like this project, please consider giving it a star on GitHub to show your support!
+
+---
+
 ## 📄 License
 📝 GPL-3 — See [LICENSE](LICENSE)
