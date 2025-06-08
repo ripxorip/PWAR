@@ -24,6 +24,7 @@
 #include "pwar_packet.h"
 
 #define DEFAULT_STREAM_IP "192.168.66.3"
+#define DEFAULT_MIDI_STREAM_IP "10.0.0.184"
 #define DEFAULT_STREAM_PORT 8321
 
 struct data;
@@ -232,6 +233,7 @@ static void do_quit(void *userdata, int signal_number) {
 
 int main(int argc, char *argv[]) {
     char stream_ip[64] = DEFAULT_STREAM_IP;
+    char midi_stream_ip[64] = DEFAULT_MIDI_STREAM_IP;
     int stream_port = DEFAULT_STREAM_PORT;
     int test_mode = 0;
     for (int i = 1; i < argc; ++i) {
@@ -254,7 +256,7 @@ int main(int argc, char *argv[]) {
     struct spa_pod_builder b = SPA_POD_BUILDER_INIT(buffer, sizeof(buffer));
 
     setup_socket(&data, stream_ip, stream_port);
-    setup_midi_socket(&data, stream_ip, stream_port + 1);
+    setup_midi_socket(&data, midi_stream_ip, stream_port);
 
     setup_recv_socket(&data, stream_port);
     pthread_mutex_init(&data.packet_mutex, NULL);
