@@ -38,12 +38,17 @@ struct data {
     struct port *in_port;
     struct port *left_out_port;
     struct port *right_out_port;
+    struct port *midi_in_port;
     float sine_phase;
     uint8_t test_mode;
     uint32_t seq;
     int sockfd;
     struct sockaddr_in servaddr;
     int recv_sockfd;
+
+    int midi_sockfd;
+    struct sockaddr_in midi_servaddr;
+
     pthread_mutex_t packet_mutex;
     pthread_cond_t packet_cond;
     rt_stream_packet_t latest_packet;
@@ -52,7 +57,10 @@ struct data {
 
 static void setup_recv_socket(struct data *data, int port);
 static void *receiver_thread(void *userdata);
+
 static void setup_socket(struct data *data, const char *ip, int port);
+static void setup_midi_socket(struct data *data, const char *ip, int port);
+
 static void stream_buffer(float *samples, uint32_t n_samples, void *userdata);
 static void on_process(void *userdata, struct spa_io_position *position);
 static void do_quit(void *userdata, int signal_number);
@@ -102,6 +110,18 @@ static void *receiver_thread(void *userdata) {
     return NULL;
 }
 
+static void setup_midi_socket(struct data *data, const char *ip, int port) {
+    data->midi_sockfd = socket(AF_INET, SOCK_DGRAM, 0);
+    if (data->midi_sockfd < 0) {
+        perror("socket creation failed");
+        exit(EXIT_FAILURE);
+    }
+    memset(&data->midi_servaddr, 0, sizeof(data->midi_servaddr));
+    data->midi_servaddr.sin_family = AF_INET;
+    data->midi_servaddr.sin_port = htons(port);
+    data->midi_servaddr.sin_addr.s_addr = inet_addr(ip);
+}
+
 static void setup_socket(struct data *data, const char *ip, int port) {
     data->sockfd = socket(AF_INET, SOCK_DGRAM, 0);
     if (data->sockfd < 0) {
@@ -134,6 +154,29 @@ static void on_process(void *userdata, struct spa_io_position *position) {
     float *in = pw_filter_get_dsp_buffer(data->in_port, position->clock.duration);
     float *left_out = pw_filter_get_dsp_buffer(data->left_out_port, position->clock.duration);
     float *right_out = pw_filter_get_dsp_buffer(data->right_out_port, position->clock.duration);
+    struct pw_buffer *midi_buf = pw_filter_dequeue_buffer(data->midi_in_port);
+
+    // FIXME: This is a hack to get the MIDI data from the first buffer.
+    // In a real application, you would want to handle multiple buffers and MIDI events properly. (Good first issue)
+    if (midi_buf && midi_buf->buffer && midi_buf->buffer->datas[0].data && midi_buf->buffer->datas[0].chunk) {
+        uint8_t midi_bytes[3];
+        uint8_t *midi_data = midi_buf->buffer->datas[0].data;
+        uint32_t midi_size = midi_buf->buffer->datas[0].chunk->size;
+
+        if (midi_size == 40) {
+            midi_bytes[0] = midi_data[32];
+            midi_bytes[1] = midi_data[33];
+            midi_bytes[2] = midi_data[34];
+            printf("Sending MIDI data: %02x %02x %02x\n", midi_bytes[0], midi_bytes[1], midi_bytes[2]);
+            // Ready to send MIDI data
+            if (sendto(data->midi_sockfd, midi_bytes, sizeof(midi_bytes), 0,
+                       (struct sockaddr *)&data->midi_servaddr, sizeof(data->midi_servaddr)) < 0) {
+                perror("sendto MIDI failed");
+            }
+        }
+        pw_filter_queue_buffer(data->midi_in_port, midi_buf);
+    }
+
     uint32_t n_samples = position->clock.duration;
     if (data->test_mode) {
         for (uint32_t n = 0; n < n_samples; n++) {
@@ -209,7 +252,10 @@ int main(int argc, char *argv[]) {
     const struct spa_pod *params[1];
     uint8_t buffer[1024];
     struct spa_pod_builder b = SPA_POD_BUILDER_INIT(buffer, sizeof(buffer));
+
     setup_socket(&data, stream_ip, stream_port);
+    setup_midi_socket(&data, stream_ip, stream_port + 1);
+
     setup_recv_socket(&data, stream_port);
     pthread_mutex_init(&data.packet_mutex, NULL);
     pthread_cond_init(&data.packet_cond, NULL);
@@ -224,7 +270,7 @@ int main(int argc, char *argv[]) {
     data.sine_phase = 0.0f;
     data.filter = pw_filter_new_simple(
         pw_main_loop_get_loop(data.loop),
-        "audio-filter",
+        "pwar",
         pw_properties_new(
             PW_KEY_MEDIA_TYPE, "Audio",
             PW_KEY_MEDIA_CATEGORY, "Filter",
@@ -259,6 +305,17 @@ int main(int argc, char *argv[]) {
             PW_KEY_PORT_NAME, "output-right",
             NULL),
         NULL, 0);
+
+    data.midi_in_port = pw_filter_add_port(data.filter,
+            PW_DIRECTION_INPUT,
+            0,
+            sizeof(struct port),
+            pw_properties_new(
+                PW_KEY_FORMAT_DSP, "8 bit raw midi",
+                PW_KEY_PORT_NAME, "midi-in",
+                NULL),
+            NULL, 0);
+
     params[0] = spa_process_latency_build(&b,
         SPA_PARAM_ProcessLatency,
         &SPA_PROCESS_LATENCY_INFO_INIT(
