@@ -58,6 +58,7 @@ public:
     ASIOError future(long selector, void* opt);
     ASIOError outputReady();
     long getMilliSeconds() const { return milliSeconds; }
+    void send_midi(uint8_t b1, uint8_t b2, uint8_t b3);
 
 private:
     void output(const rt_stream_packet_t& packet);
@@ -69,6 +70,9 @@ private:
     void initUdpSender();
     void closeUdpSender();
     void parseConfigFile();
+    void midi_input_listener();
+    void startMidiInputListener();
+    void stopMidiInputListener();
 
     double samplePosition;
     double sampleRate;
@@ -98,6 +102,8 @@ private:
     bool udpWSAInitialized = false;
     struct sockaddr_in udpSendAddr;
     std::string udpSendIp = "192.168.66.2";
+    std::thread midiInputListenerThread;
+    bool midiInputListenerRunning = false;
 };
 
 #endif // __PWAR_ASIO_H__

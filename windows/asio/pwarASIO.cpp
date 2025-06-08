@@ -88,7 +88,8 @@ pwarASIO::pwarASIO(LPUNKNOWN pUnk, HRESULT* phr)
       udpListenerRunning(false),
       udpSendSocket(INVALID_SOCKET),
       udpWSAInitialized(false),
-      udpSendIp("192.168.66.2")
+      udpSendIp("192.168.66.2"),
+      midiInputListenerRunning(false)
 {
     for (long i = 0; i < kNumInputs; ++i) {
         inputBuffers[i] = nullptr;
@@ -102,11 +103,13 @@ pwarASIO::pwarASIO(LPUNKNOWN pUnk, HRESULT* phr)
     parseConfigFile();
     initUdpSender();
     startUdpListener();
+    startMidiInputListener();
 }
 
 pwarASIO::~pwarASIO() {
     closeUdpSender();
     stopUdpListener();
+    stopMidiInputListener();
     stop();
     disposeBuffers();
 }
@@ -425,6 +428,42 @@ void pwarASIO::udp_packet_listener() {
     WSACleanup();
 }
 
+void pwarASIO::midi_input_listener() {
+    WSADATA wsaData;
+    SOCKET sockfd;
+    sockaddr_in servaddr{}, cliaddr{};
+    int n;
+    socklen_t len;
+    char buffer[2048];
+    if (WSAStartup(MAKEWORD(2,2), &wsaData) != 0) {
+        return;
+    }
+    sockfd = socket(AF_INET, SOCK_DGRAM, 0);
+    if (sockfd == INVALID_SOCKET) {
+        WSACleanup();
+        return;
+    }
+    memset(&servaddr, 0, sizeof(servaddr));
+    servaddr.sin_family = AF_INET;
+    servaddr.sin_addr.s_addr = INADDR_ANY;
+    servaddr.sin_port = htons(8322);
+    if (bind(sockfd, reinterpret_cast<sockaddr*>(&servaddr), sizeof(servaddr)) == SOCKET_ERROR) {
+        closesocket(sockfd);
+        WSACleanup();
+        return;
+    }
+    midiInputListenerRunning = true;
+    while (midiInputListenerRunning) {
+        len = sizeof(cliaddr);
+        n = recvfrom(sockfd, buffer, sizeof(buffer), 0, reinterpret_cast<sockaddr*>(&cliaddr), &len);
+        if (n > 0) {
+            send_midi(buffer[0], buffer[1], buffer[2]);
+        }
+    }
+    closesocket(sockfd);
+    WSACleanup();
+}
+
 void pwarASIO::startUdpListener() {
     if (!udpListenerRunning) {
         udpListenerRunning = true;
@@ -436,6 +475,20 @@ void pwarASIO::stopUdpListener() {
     udpListenerRunning = false;
     if (udpListenerThread.joinable()) {
         udpListenerThread.join();
+    }
+}
+
+void pwarASIO::startMidiInputListener() {
+    if (!midiInputListenerRunning) {
+        midiInputListenerRunning = true;
+        midiInputListenerThread = std::thread(&pwarASIO::midi_input_listener, this);
+    }
+}
+
+void pwarASIO::stopMidiInputListener() {
+    midiInputListenerRunning = false;
+    if (midiInputListenerThread.joinable()) {
+        midiInputListenerThread.join();
     }
 }
 
@@ -496,5 +549,54 @@ void pwarASIO::closeUdpSender() {
     if (udpWSAInitialized) {
         WSACleanup();
         udpWSAInitialized = false;
+    }
+}
+
+void pwarASIO::send_midi(uint8_t b1, uint8_t b2, uint8_t b3) {
+    static HMIDIOUT hMidiOut = nullptr;
+    static bool triedOpen = false;
+
+    if (!triedOpen) {
+        UINT numDevs = midiOutGetNumDevs();
+        UINT ripxPort = UINT_MAX;
+        for (UINT i = 0; i < numDevs; ++i) {
+            MIDIOUTCAPS caps;
+            if (midiOutGetDevCaps(i, &caps, sizeof(caps)) == MMSYSERR_NOERROR) {
+                char logbuf[256];
+                snprintf(logbuf, sizeof(logbuf), "Port %u: %s", i, caps.szPname);
+                pwarASIOLog::Send(logbuf);
+                if (strcmp(caps.szPname, "ripxostation") == 0) {
+                    ripxPort = i;
+                }
+            }
+        }
+        if (ripxPort != UINT_MAX) {
+            if (midiOutOpen(&hMidiOut, ripxPort, 0, 0, 0) != MMSYSERR_NOERROR) {
+                hMidiOut = nullptr;
+                pwarASIOLog::Send("Failed to open MIDI port: ripxostation");
+            } else {
+                pwarASIOLog::Send("Opened MIDI port: ripxostation");
+            }
+        } else {
+            pwarASIOLog::Send("MIDI port 'ripxostation' not found");
+        }
+        triedOpen = true;
+    }
+    if (hMidiOut) {
+        // pwarLog the bytes
+        char logbuf[64];
+        snprintf(logbuf, sizeof(logbuf), "MIDI bytes: 0x%02X 0x%02X 0x%02X", b1, b2, b3);
+        pwarASIOLog::Send(logbuf);
+        DWORD msg = (b1 & 0xFF) | ((b2 & 0xFF) << 8) | ((b3 & 0xFF) << 16);
+        // Pwar log the msg
+        snprintf(logbuf, sizeof(logbuf), "Sending MIDI message: 0x%06X", msg);
+        pwarASIOLog::Send(logbuf);
+
+        MMRESULT result = midiOutShortMsg(hMidiOut, msg);
+        if (result != MMSYSERR_NOERROR) {
+            char errbuf[64];
+            snprintf(errbuf, sizeof(errbuf), "midiOutShortMsg failed: %u", result);
+            pwarASIOLog::Send(errbuf);
+        }
     }
 }
