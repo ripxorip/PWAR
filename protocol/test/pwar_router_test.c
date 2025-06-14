@@ -8,7 +8,8 @@ START_TEST(test_send_buffer)
     const uint32_t test_sizes[] = {128, 256, 512, 1024, 2048, 4096};
     for (size_t t = 0; t < sizeof(test_sizes)/sizeof(test_sizes[0]); ++t) {
         uint32_t n_samples = test_sizes[t];
-        pwar_router_init(n_samples, channels);
+        pwar_router_t router; // Declare router struct
+        pwar_router_init(&router, n_samples, channels); // Pass pointer to router
         float ch0[4096], ch1[4096];
         for (uint32_t i = 0; i < n_samples; ++i) {
             ch0[i] = (float)i;
@@ -18,7 +19,7 @@ START_TEST(test_send_buffer)
         uint32_t max_packets = (n_samples + PWAR_PACKET_CHUNK_SIZE - 1) / PWAR_PACKET_CHUNK_SIZE;
         pwar_packet_t packets[32] = {0};
         uint32_t packets_to_send = 0;
-        int ret = pwar_router_send_buffer(samples, n_samples, channels, packets, max_packets, &packets_to_send);
+        int ret = pwar_router_send_buffer(&router, samples, n_samples, channels, packets, max_packets, &packets_to_send); // Pass &router
         ck_assert_msg(ret == 0, "n_samples=%u ret=%d", n_samples, ret);
         for (uint32_t p = 0; p < packets_to_send; ++p) {
             ck_assert_msg(packets[p].num_packets == packets_to_send, "packet %u num_packets=%u (expected %u)", p, packets[p].num_packets, packets_to_send);
@@ -36,7 +37,8 @@ START_TEST(test_process_packet)
     const uint32_t test_sizes[] = {128, 256, 512, 1024, 2048, 4096};
     for (size_t t = 0; t < sizeof(test_sizes)/sizeof(test_sizes[0]); ++t) {
         uint32_t n_samples = test_sizes[t];
-        pwar_router_init(n_samples, channels);
+        pwar_router_t router; // Declare router struct
+        pwar_router_init(&router, n_samples, channels); // Pass pointer to router
         float ch0[4096], ch1[4096];
         for (uint32_t i = 0; i < n_samples; ++i) {
             ch0[i] = (float)i;
@@ -46,13 +48,13 @@ START_TEST(test_process_packet)
         uint32_t max_packets = (n_samples + PWAR_PACKET_CHUNK_SIZE - 1) / PWAR_PACKET_CHUNK_SIZE;
         pwar_packet_t packets[32] = {0};
         uint32_t packets_to_send = 0;
-        int ret = pwar_router_send_buffer(samples, n_samples, channels, packets, max_packets, &packets_to_send);
+        int ret = pwar_router_send_buffer(&router, samples, n_samples, channels, packets, max_packets, &packets_to_send); // Pass &router
         ck_assert_msg(ret == 0, "n_samples=%u ret=%d", n_samples, ret);
         float out_ch0[4096] = {0}, out_ch1[4096] = {0};
         float *output_buffers[2] = { out_ch0, out_ch1 };
         int output_ready = 0;
         for (uint32_t p = 0; p < packets_to_send; ++p) {
-            int r = pwar_router_process_packet(&packets[p], output_buffers, n_samples, channels);
+            int r = pwar_router_process_packet(&router, &packets[p], output_buffers, n_samples, channels); // Pass &router
             if (p < packets_to_send - 1) {
                 ck_assert_msg(r == 0, "output ready too early at packet %u", p);
             }
