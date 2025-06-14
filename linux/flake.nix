@@ -31,6 +31,7 @@
       devShell = pkgs.mkShell {
         buildInputs = with pkgs; [
           gcc
+          check
           pkg-config
           pipewire.dev
         ];
