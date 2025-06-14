@@ -8,8 +8,7 @@
 #include "pwar_router.h"
 #include "pwar_packet.h"
 
-void pwar_router_init(pwar_router_t *router, uint32_t buffer_size, uint32_t channel_count) {
-    router->buffer_size = buffer_size;
+void pwar_router_init(pwar_router_t *router, uint32_t channel_count) {
     router->channel_count = channel_count;
     router->received_packets = 0;
     for (uint32_t i = 0; i < PWAR_ROUTER_MAX_BUFFER_SIZE / PWAR_PACKET_CHUNK_SIZE; ++i) router->packet_received[i] = 0;
@@ -28,7 +27,7 @@ int pwar_router_process_packet(pwar_router_t *router, pwar_packet_t *input_packe
         // Copy samples to internal buffer
         uint32_t offset = input_packet->packet_index * PWAR_PACKET_CHUNK_SIZE;
         for (uint32_t ch = 0; ch < router->channel_count && ch < PWAR_CHANNELS; ++ch) {
-            for (uint32_t s = 0; s < input_packet->n_samples && (offset + s) < router->buffer_size; ++s) {
+            for (uint32_t s = 0; s < input_packet->n_samples; ++s) {
                 router->buffers[ch][offset + s] = input_packet->samples[ch][s];
             }
         }
@@ -37,7 +36,9 @@ int pwar_router_process_packet(pwar_router_t *router, pwar_packet_t *input_packe
     }
     // Check if all packets for this buffer are received
     if (router->received_packets == input_packet->num_packets) {
-        uint32_t n_samples = router->buffer_size < output_size ? router->buffer_size : output_size;
+        // Calculate total number of samples from packet info
+        uint32_t total_samples = (input_packet->num_packets - 1) * PWAR_PACKET_CHUNK_SIZE + input_packet->n_samples;
+        uint32_t n_samples = total_samples < output_size ? total_samples : output_size;
         for (uint32_t ch = 0; ch < output_channel_count && ch < router->channel_count; ++ch) {
             for (uint32_t s = 0; s < n_samples; ++s) {
                 output_buffers[ch][s] = router->buffers[ch][s];
@@ -50,17 +51,17 @@ int pwar_router_process_packet(pwar_router_t *router, pwar_packet_t *input_packe
 
 // Returns 0 on success, -1 if not enough space in packets array, -2 if invalid arguments
 int pwar_router_send_buffer(pwar_router_t *router, float **samples, uint32_t n_samples, uint32_t channel_count, pwar_packet_t *packets, const uint32_t packet_count, uint32_t *packets_to_send) {
+    (void)router; // Unused in this implementation, but could be used for future enhancements
     if (!samples || !packets || !packets_to_send || channel_count == 0 || n_samples == 0) return -2;
     uint32_t chunk_size = PWAR_PACKET_CHUNK_SIZE;
-    uint32_t total_samples = (n_samples < router->buffer_size) ? n_samples : router->buffer_size;
-    uint32_t total_packets = (total_samples + chunk_size - 1) / chunk_size;
+    uint32_t total_packets = (n_samples + chunk_size - 1) / chunk_size;
     if (total_packets > packet_count) {
         *packets_to_send = 0;
         return -1; // Not enough space in packets array
     }
     for (uint32_t p = 0; p < total_packets; ++p) {
         uint32_t offset = p * chunk_size;
-        uint32_t samples_in_packet = (offset + chunk_size <= total_samples) ? chunk_size : (total_samples - offset);
+        uint32_t samples_in_packet = (offset + chunk_size <= n_samples) ? chunk_size : (n_samples - offset);
         for (uint32_t ch = 0; ch < channel_count; ++ch) {
             for (uint32_t s = 0; s < samples_in_packet; ++s) {
                 packets[p].samples[ch][s] = samples[ch][offset + s];
@@ -68,7 +69,7 @@ int pwar_router_send_buffer(pwar_router_t *router, float **samples, uint32_t n_s
         }
         packets[p].num_packets = total_packets;
         packets[p].packet_index = p;
-        packets[p].n_samples = samples_in_packet; // <-- FIX: set n_samples for each packet
+        packets[p].n_samples = samples_in_packet;
     }
     *packets_to_send = total_packets;
     return 0;
