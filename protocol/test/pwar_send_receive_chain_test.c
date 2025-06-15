@@ -11,32 +11,30 @@
 #define CHUNK_SIZE 128
 #define WIN_BUFFER 1024
 
-static void generate_test_sine(float **samples, uint32_t channels, uint32_t n_samples, float frequency, float sample_rate) {
+// Helper to set up test sine wave arrays and fill them
+static void fill_test_sine_wave(float *test_samples, float **test_samples_ptrs, uint32_t channels, uint32_t n_test_samples, float frequency, float sample_rate) {
     for (uint32_t ch = 0; ch < channels; ++ch) {
-        for (uint32_t s = 0; s < n_samples; ++s) {
-            samples[ch][s] = sinf(2 * M_PI * frequency * s / sample_rate);
+        test_samples_ptrs[ch] = test_samples + ch * n_test_samples;
+        for (uint32_t s = 0; s < n_test_samples; ++s) {
+            test_samples[ch * n_test_samples + s] = sinf(2 * M_PI * frequency * s / sample_rate);
         }
     }
 }
 
 START_TEST(test_send_and_rcv)
 {
+    const uint32_t n_test_samples = 8192;
     pwar_router_t linux_router;
     pwar_router_t win_router;
 
     pwar_router_init(&win_router, CHANNELS);
 
     // Generate a test sine wave, 2 channels, 8192 samples, 48 kHz sample rate, 440 Hz frequency
-    const uint32_t n_test_samples = 8192;
     float test_samples[CHANNELS][n_test_samples];
     float *test_samples_ptrs[CHANNELS];
-    for (uint32_t ch = 0; ch < CHANNELS; ++ch) {
-        test_samples_ptrs[ch] = test_samples[ch];
-    }
-    generate_test_sine(test_samples_ptrs, CHANNELS, n_test_samples, 440.0f, 48000.0f);
+    fill_test_sine_wave(&test_samples[0][0], test_samples_ptrs, CHANNELS, n_test_samples, 440.0f, 48000.0f);
 
     float result_samples[CHANNELS][n_test_samples];
-
 
     // Initialize Linux side
     pwar_router_init(&linux_router, CHANNELS);
