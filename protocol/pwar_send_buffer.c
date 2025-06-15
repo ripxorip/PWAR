@@ -18,10 +18,11 @@ void pwar_send_buffer_init(uint32_t channels, uint32_t max_samples) {
     }
 }
 
-uint32_t pwar_send_buffer_push(float **samples, uint32_t n_samples) {
+uint32_t pwar_send_buffer_push(float *samples, uint32_t n_samples, uint32_t channels, uint32_t stride) {
+    if (channels != sb.channels) return 0;
     if (sb.n_samples + n_samples > sb.max_samples) n_samples = sb.max_samples - sb.n_samples;
-    for (uint32_t ch = 0; ch < sb.channels; ++ch) {
-        memcpy(&sb.buffer[ch][sb.n_samples], samples[ch], n_samples * sizeof(float));
+    for (uint32_t ch = 0; ch < channels; ++ch) {
+        memcpy(&sb.buffer[ch][sb.n_samples], &samples[ch * stride], n_samples * sizeof(float));
     }
     sb.n_samples += n_samples;
     return sb.n_samples;
@@ -31,13 +32,12 @@ int pwar_send_buffer_ready() {
     return sb.n_samples >= sb.max_samples;
 }
 
-void pwar_send_buffer_get(float **out_channels, uint32_t *n_samples) {
+void pwar_send_buffer_get(float *out_channels, uint32_t *n_samples, uint32_t stride) {
     if (out_channels) {
         for (uint32_t ch = 0; ch < sb.channels; ++ch) {
-            out_channels[ch] = sb.buffer[ch];
+            memcpy(&out_channels[ch * stride], sb.buffer[ch], sb.n_samples * sizeof(float));
         }
     }
     if (n_samples) *n_samples = sb.n_samples;
-    // Automatically reset after reading out samples
     sb.n_samples = 0;
 }

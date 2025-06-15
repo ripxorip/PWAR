@@ -14,11 +14,11 @@ static struct {
     int ping_pong; // 0 or 1
 } rcv = {0};
 
-int pwar_rcv_buffer_add_buffer(float **buffer, uint32_t n_samples, uint32_t channels) {
+int pwar_rcv_buffer_add_buffer(float *buffer, uint32_t n_samples, uint32_t channels, uint32_t stride) {
     if (channels > PWAR_RCV_BUFFER_MAX_CHANNELS || n_samples > PWAR_RCV_BUFFER_MAX_SAMPLES) return -1;
     int idx = rcv.ping_pong;
     for (uint32_t ch = 0; ch < channels; ++ch) {
-        memcpy(rcv.buffers[idx][ch], buffer[ch], n_samples * sizeof(float));
+        memcpy(rcv.buffers[idx][ch], &buffer[ch * stride], n_samples * sizeof(float));
     }
     rcv.n_samples[idx] = n_samples;
     rcv.channels = channels;
@@ -28,12 +28,12 @@ int pwar_rcv_buffer_add_buffer(float **buffer, uint32_t n_samples, uint32_t chan
     return 0;
 }
 
-int pwar_rcv_get_chunk(float **chunks, uint32_t channels) {
+int pwar_rcv_get_chunk(float *chunks, uint32_t channels, uint32_t stride) {
     int idx = !rcv.ping_pong; // read from the other buffer
     if (!rcv.buffer_ready[idx] || channels > rcv.channels) {
         // No buffer ready, output silence
         for (uint32_t ch = 0; ch < channels; ++ch) {
-            memset(chunks[ch], 0, PWAR_RCV_BUFFER_CHUNK_SIZE * sizeof(float));
+            memset(&chunks[ch * stride], 0, PWAR_RCV_BUFFER_CHUNK_SIZE * sizeof(float));
         }
         return 0;
     }
@@ -45,7 +45,7 @@ int pwar_rcv_get_chunk(float **chunks, uint32_t channels) {
         rcv.chunk_pos = 0;
         // Output silence until next buffer is ready
         for (uint32_t ch = 0; ch < channels; ++ch) {
-            memset(chunks[ch], 0, PWAR_RCV_BUFFER_CHUNK_SIZE * sizeof(float));
+            memset(&chunks[ch * stride], 0, PWAR_RCV_BUFFER_CHUNK_SIZE * sizeof(float));
         }
         return 0;
     }
@@ -53,9 +53,9 @@ int pwar_rcv_get_chunk(float **chunks, uint32_t channels) {
     for (uint32_t ch = 0; ch < channels; ++ch) {
         uint32_t remain = n_samples - start;
         uint32_t to_copy = remain < PWAR_RCV_BUFFER_CHUNK_SIZE ? remain : PWAR_RCV_BUFFER_CHUNK_SIZE;
-        memcpy(chunks[ch], &rcv.buffers[idx][ch][start], to_copy * sizeof(float));
+        memcpy(&chunks[ch * stride], &rcv.buffers[idx][ch][start], to_copy * sizeof(float));
         if (to_copy < PWAR_RCV_BUFFER_CHUNK_SIZE) {
-            memset(&chunks[ch][to_copy], 0, (PWAR_RCV_BUFFER_CHUNK_SIZE - to_copy) * sizeof(float));
+            memset(&chunks[ch * stride + to_copy], 0, (PWAR_RCV_BUFFER_CHUNK_SIZE - to_copy) * sizeof(float));
         }
     }
     rcv.chunk_pos++;

@@ -2,10 +2,10 @@
 #include "../pwar_send_buffer.h"
 #include <string.h>
 
-static void fill_samples(float **samples, uint32_t channels, uint32_t n_samples, float value) {
+static void fill_samples(float *samples, uint32_t channels, uint32_t n_samples, uint32_t stride, float value) {
     for (uint32_t ch = 0; ch < channels; ++ch) {
         for (uint32_t s = 0; s < n_samples; ++s) {
-            samples[ch][s] = value + ch * 1000 + s;
+            samples[ch * stride + s] = value + ch * 1000 + s;
         }
     }
 }
@@ -20,108 +20,100 @@ END_TEST
 START_TEST(test_send_buffer_256)
 {
     pwar_send_buffer_init(2, 256);
-    float *buf[2];
-    float ch1[128], ch2[128];
-    buf[0] = ch1; buf[1] = ch2;
-    fill_samples(buf, 2, 128, 1.0f);
-    ck_assert_int_eq(pwar_send_buffer_push(buf, 128), 128);
+    float buf[2 * 128];
+    fill_samples(buf, 2, 128, 128, 1.0f);
+    ck_assert_int_eq(pwar_send_buffer_push(buf, 128, 2, 128), 128);
     ck_assert_int_eq(pwar_send_buffer_ready(), 0);
-    fill_samples(buf, 2, 128, 2.0f);
-    ck_assert_int_eq(pwar_send_buffer_push(buf, 128), 256);
+    fill_samples(buf, 2, 128, 128, 2.0f);
+    ck_assert_int_eq(pwar_send_buffer_push(buf, 128, 2, 128), 256);
     ck_assert_int_eq(pwar_send_buffer_ready(), 1);
-    float *out_channels[2];
+    float out_channels[2 * 256];
     uint32_t n_samples = 0;
-    pwar_send_buffer_get(out_channels, &n_samples);
+    pwar_send_buffer_get(out_channels, &n_samples, 256);
     ck_assert_int_eq(n_samples, 256);
-    ck_assert_float_eq_tol(out_channels[0][0], 1.0f, 0.0001f);
-    ck_assert_float_eq_tol(out_channels[0][128], 2.0f, 0.0001f);
-    ck_assert_float_eq_tol(out_channels[1][0], 1001.0f, 0.0001f);
-    ck_assert_float_eq_tol(out_channels[1][128], 1002.0f, 0.0001f);
+    ck_assert_float_eq_tol(out_channels[0 * 256 + 0], 1.0f, 0.0001f);
+    ck_assert_float_eq_tol(out_channels[0 * 256 + 128], 2.0f, 0.0001f);
+    ck_assert_float_eq_tol(out_channels[1 * 256 + 0], 1001.0f, 0.0001f);
+    ck_assert_float_eq_tol(out_channels[1 * 256 + 128], 1002.0f, 0.0001f);
 }
 END_TEST
 
 START_TEST(test_send_buffer_512)
 {
     pwar_send_buffer_init(2, 512);
-    float *buf[2];
-    float ch1[128], ch2[128];
-    buf[0] = ch1; buf[1] = ch2;
+    float buf[2 * 128];
     for (int i = 0; i < 4; ++i) {
-        fill_samples(buf, 2, 128, (float)i);
-        pwar_send_buffer_push(buf, 128);
+        fill_samples(buf, 2, 128, 128, (float)i);
+        pwar_send_buffer_push(buf, 128, 2, 128);
     }
     ck_assert_int_eq(pwar_send_buffer_ready(), 1);
-    float *out_channels[2];
+    float out_channels[2 * 512];
     uint32_t n_samples = 0;
-    pwar_send_buffer_get(out_channels, &n_samples);
+    pwar_send_buffer_get(out_channels, &n_samples, 512);
     ck_assert_int_eq(n_samples, 512);
-    ck_assert_float_eq_tol(out_channels[0][0], 0.0f, 0.0001f);
-    ck_assert_float_eq_tol(out_channels[0][128], 1.0f, 0.0001f);
-    ck_assert_float_eq_tol(out_channels[0][256], 2.0f, 0.0001f);
-    ck_assert_float_eq_tol(out_channels[0][384], 3.0f, 0.0001f);
-    ck_assert_float_eq_tol(out_channels[1][0], 1000.0f, 0.0001f);
-    ck_assert_float_eq_tol(out_channels[1][128], 1001.0f, 0.0001f);
-    ck_assert_float_eq_tol(out_channels[1][256], 1002.0f, 0.0001f);
-    ck_assert_float_eq_tol(out_channels[1][384], 1003.0f, 0.0001f);
+    ck_assert_float_eq_tol(out_channels[0 * 512 + 0], 0.0f, 0.0001f);
+    ck_assert_float_eq_tol(out_channels[0 * 512 + 128], 1.0f, 0.0001f);
+    ck_assert_float_eq_tol(out_channels[0 * 512 + 256], 2.0f, 0.0001f);
+    ck_assert_float_eq_tol(out_channels[0 * 512 + 384], 3.0f, 0.0001f);
+    ck_assert_float_eq_tol(out_channels[1 * 512 + 0], 1000.0f, 0.0001f);
+    ck_assert_float_eq_tol(out_channels[1 * 512 + 128], 1001.0f, 0.0001f);
+    ck_assert_float_eq_tol(out_channels[1 * 512 + 256], 1002.0f, 0.0001f);
+    ck_assert_float_eq_tol(out_channels[1 * 512 + 384], 1003.0f, 0.0001f);
 }
 END_TEST
 
 START_TEST(test_send_buffer_1024)
 {
     pwar_send_buffer_init(2, 1024);
-    float *buf[2];
-    float ch1[128], ch2[128];
-    buf[0] = ch1; buf[1] = ch2;
+    float buf[2 * 128];
     for (int i = 0; i < 8; ++i) {
-        fill_samples(buf, 2, 128, (float)i);
-        pwar_send_buffer_push(buf, 128);
+        fill_samples(buf, 2, 128, 128, (float)i);
+        pwar_send_buffer_push(buf, 128, 2, 128);
     }
     ck_assert_int_eq(pwar_send_buffer_ready(), 1);
-    float *out_channels[2];
+    float out_channels[2 * 1024];
     uint32_t n_samples = 0;
-    pwar_send_buffer_get(out_channels, &n_samples);
+    pwar_send_buffer_get(out_channels, &n_samples, 1024);
     ck_assert_int_eq(n_samples, 1024);
-    ck_assert_float_eq_tol(out_channels[0][0], 0.0f, 0.0001f);
-    ck_assert_float_eq_tol(out_channels[0][128], 1.0f, 0.0001f);
-    ck_assert_float_eq_tol(out_channels[0][896], 7.0f, 0.0001f);
-    ck_assert_float_eq_tol(out_channels[1][0], 1000.0f, 0.0001f);
-    ck_assert_float_eq_tol(out_channels[1][128], 1001.0f, 0.0001f);
-    ck_assert_float_eq_tol(out_channels[1][896], 1007.0f, 0.0001f);
+    ck_assert_float_eq_tol(out_channels[0 * 1024 + 0], 0.0f, 0.0001f);
+    ck_assert_float_eq_tol(out_channels[0 * 1024 + 128], 1.0f, 0.0001f);
+    ck_assert_float_eq_tol(out_channels[0 * 1024 + 896], 7.0f, 0.0001f);
+    ck_assert_float_eq_tol(out_channels[1 * 1024 + 0], 1000.0f, 0.0001f);
+    ck_assert_float_eq_tol(out_channels[1 * 1024 + 128], 1001.0f, 0.0001f);
+    ck_assert_float_eq_tol(out_channels[1 * 1024 + 896], 1007.0f, 0.0001f);
 }
 END_TEST
 
 START_TEST(test_send_buffer_multiple_rounds)
 {
     pwar_send_buffer_init(2, 256);
-    float *buf[2];
-    float ch1[128], ch2[128];
-    buf[0] = ch1; buf[1] = ch2;
+    float buf[2 * 128];
     // First round
-    fill_samples(buf, 2, 128, 10.0f);
-    pwar_send_buffer_push(buf, 128);
-    fill_samples(buf, 2, 128, 20.0f);
-    pwar_send_buffer_push(buf, 128);
+    fill_samples(buf, 2, 128, 128, 10.0f);
+    pwar_send_buffer_push(buf, 128, 2, 128);
+    fill_samples(buf, 2, 128, 128, 20.0f);
+    pwar_send_buffer_push(buf, 128, 2, 128);
     ck_assert_int_eq(pwar_send_buffer_ready(), 1);
-    float *out_channels[2];
+    float out_channels[2 * 256];
     uint32_t n_samples = 0;
-    pwar_send_buffer_get(out_channels, &n_samples);
+    pwar_send_buffer_get(out_channels, &n_samples, 256);
     ck_assert_int_eq(n_samples, 256);
-    ck_assert_float_eq_tol(out_channels[0][0], 10.0f, 0.0001f);
-    ck_assert_float_eq_tol(out_channels[0][128], 20.0f, 0.0001f);
-    ck_assert_float_eq_tol(out_channels[1][0], 1010.0f, 0.0001f);
-    ck_assert_float_eq_tol(out_channels[1][128], 1020.0f, 0.0001f);
+    ck_assert_float_eq_tol(out_channels[0 * 256 + 0], 10.0f, 0.0001f);
+    ck_assert_float_eq_tol(out_channels[0 * 256 + 128], 20.0f, 0.0001f);
+    ck_assert_float_eq_tol(out_channels[1 * 256 + 0], 1010.0f, 0.0001f);
+    ck_assert_float_eq_tol(out_channels[1 * 256 + 128], 1020.0f, 0.0001f);
     // Second round
-    fill_samples(buf, 2, 128, 30.0f);
-    pwar_send_buffer_push(buf, 128);
-    fill_samples(buf, 2, 128, 40.0f);
-    pwar_send_buffer_push(buf, 128);
+    fill_samples(buf, 2, 128, 128, 30.0f);
+    pwar_send_buffer_push(buf, 128, 2, 128);
+    fill_samples(buf, 2, 128, 128, 40.0f);
+    pwar_send_buffer_push(buf, 128, 2, 128);
     ck_assert_int_eq(pwar_send_buffer_ready(), 1);
-    pwar_send_buffer_get(out_channels, &n_samples);
+    pwar_send_buffer_get(out_channels, &n_samples, 256);
     ck_assert_int_eq(n_samples, 256);
-    ck_assert_float_eq_tol(out_channels[0][0], 30.0f, 0.0001f);
-    ck_assert_float_eq_tol(out_channels[0][128], 40.0f, 0.0001f);
-    ck_assert_float_eq_tol(out_channels[1][0], 1030.0f, 0.0001f);
-    ck_assert_float_eq_tol(out_channels[1][128], 1040.0f, 0.0001f);
+    ck_assert_float_eq_tol(out_channels[0 * 256 + 0], 30.0f, 0.0001f);
+    ck_assert_float_eq_tol(out_channels[0 * 256 + 128], 40.0f, 0.0001f);
+    ck_assert_float_eq_tol(out_channels[1 * 256 + 0], 1030.0f, 0.0001f);
+    ck_assert_float_eq_tol(out_channels[1 * 256 + 128], 1040.0f, 0.0001f);
 }
 END_TEST
 
@@ -142,27 +134,23 @@ START_TEST(test_send_buffer_delay_512_on_2048_samples)
     int result_pos = 0;
     
     // Temporary buffer for pushing 128 samples at a time
-    float *buf[1];
-    float chunk[128];
-    buf[0] = chunk;
-    
+    float buf[128];
     // Push 128 samples at a time, collect output when buffer is ready
     for (int i = 0; i < 2048; i += 128) {
         // Copy next 128 samples into chunk
         for (int j = 0; j < 128; ++j) {
-            chunk[j] = input[i + j];
+            buf[j] = input[i + j];
         }
-        pwar_send_buffer_push(buf, 128);
+        pwar_send_buffer_push(buf, 128, 1, 128);
         // When buffer is ready, retrieve output and store in result
         if (pwar_send_buffer_ready()) {
-            float *out_channels[1];
+            float out_channels[512];
             uint32_t n_samples = 0;
-            pwar_send_buffer_get(out_channels, &n_samples);
+            pwar_send_buffer_get(out_channels, &n_samples, 512);
             // Copy output to result array
             for (uint32_t k = 0; k < n_samples; ++k) {
-                result[result_pos++] = out_channels[0][k];
+                result[result_pos++] = out_channels[k];
             }
-            // No need to call pwar_send_buffer_reset()
         }
     }
     // At the end, result_pos should be 2048
@@ -183,34 +171,33 @@ START_TEST(test_send_buffer_ready_only_on_full)
     const int chunk_size = 128;
     const int n_chunks = buffer_size / chunk_size;
     pwar_send_buffer_init(1, buffer_size);
-    float buf_data[chunk_size];
-    float *buf[1] = { buf_data };
+    float buf[128];
     // Fill with dummy data
-    for (int j = 0; j < chunk_size; ++j) buf_data[j] = (float)j;
+    for (int j = 0; j < chunk_size; ++j) buf[j] = (float)j;
 
     // 1. Buffer should not be ready until buffer_size is met
     for (int i = 0; i < n_chunks - 1; ++i) {
-        pwar_send_buffer_push(buf, chunk_size);
+        pwar_send_buffer_push(buf, chunk_size, 1, chunk_size);
         ck_assert_int_eq(pwar_send_buffer_ready(), 0);
     }
     // Last chunk should make it ready
-    pwar_send_buffer_push(buf, chunk_size);
+    pwar_send_buffer_push(buf, chunk_size, 1, chunk_size);
     ck_assert_int_eq(pwar_send_buffer_ready(), 1);
     // Read out the buffer to trigger reset
-    float *out_channels[1];
+    float out_channels[512];
     uint32_t n_samples = 0;
-    pwar_send_buffer_get(out_channels, &n_samples);
+    pwar_send_buffer_get(out_channels, &n_samples, 512);
     ck_assert_int_eq(n_samples, buffer_size);
 
     // Repeat: should not be ready until full again
     for (int i = 0; i < n_chunks - 1; ++i) {
-        pwar_send_buffer_push(buf, chunk_size);
+        pwar_send_buffer_push(buf, chunk_size, 1, chunk_size);
         ck_assert_int_eq(pwar_send_buffer_ready(), 0);
     }
-    pwar_send_buffer_push(buf, chunk_size);
+    pwar_send_buffer_push(buf, chunk_size, 1, chunk_size);
     ck_assert_int_eq(pwar_send_buffer_ready(), 1);
     // Read out again to reset
-    pwar_send_buffer_get(out_channels, &n_samples);
+    pwar_send_buffer_get(out_channels, &n_samples, 512);
     ck_assert_int_eq(n_samples, buffer_size);
 }
 END_TEST
