@@ -12,9 +12,8 @@
 #define WIN_BUFFER 1024
 
 // Helper to set up test sine wave arrays and fill them
-static void fill_test_sine_wave(float *test_samples, float **test_samples_ptrs, uint32_t channels, uint32_t n_test_samples, float frequency, float sample_rate) {
+static void fill_test_sine_wave(float *test_samples, uint32_t channels, uint32_t n_test_samples, float frequency, float sample_rate) {
     for (uint32_t ch = 0; ch < channels; ++ch) {
-        test_samples_ptrs[ch] = test_samples + ch * n_test_samples;
         for (uint32_t s = 0; s < n_test_samples; ++s) {
             test_samples[ch * n_test_samples + s] = sinf(2 * M_PI * frequency * s / sample_rate);
         }
@@ -30,11 +29,10 @@ START_TEST(test_send_and_rcv)
     pwar_router_init(&win_router, CHANNELS);
 
     // Generate a test sine wave, 2 channels, 8192 samples, 48 kHz sample rate, 440 Hz frequency
-    float test_samples[CHANNELS][n_test_samples];
-    float *test_samples_ptrs[CHANNELS];
-    fill_test_sine_wave(&test_samples[0][0], test_samples_ptrs, CHANNELS, n_test_samples, 440.0f, 48000.0f);
+    float test_samples[CHANNELS * n_test_samples];
+    fill_test_sine_wave(test_samples, CHANNELS, n_test_samples, 440.0f, 48000.0f);
 
-    float result_samples[CHANNELS][n_test_samples];
+    float result_samples[CHANNELS * n_test_samples];
 
     // Initialize Linux side
     pwar_router_init(&linux_router, CHANNELS);
@@ -47,20 +45,22 @@ START_TEST(test_send_and_rcv)
     // Loop over the test_samples in chunks
     for (uint32_t start = 0; start < n_test_samples; start += CHUNK_SIZE) {
         // Linux side:
-        float *chunk_ptrs[CHANNELS];
+        float chunk_buf[CHANNELS * CHUNK_SIZE];
         for (uint32_t ch = 0; ch < CHANNELS; ++ch) {
-            chunk_ptrs[ch] = &test_samples[ch][start];
+            for (uint32_t s = 0; s < CHUNK_SIZE; ++s) {
+                chunk_buf[ch * CHUNK_SIZE + s] = test_samples[ch * n_test_samples + start + s];
+            }
         }
-        pwar_send_buffer_push(chunk_ptrs, CHUNK_SIZE);
+        pwar_send_buffer_push(chunk_buf, CHUNK_SIZE, CHANNELS, CHUNK_SIZE);
 
         if (pwar_send_buffer_ready()) {
-            float *linux_send_samples[CHANNELS];
+            float linux_send_samples[CHANNELS * WIN_BUFFER];
             uint32_t n_samples = 0;
-            pwar_send_buffer_get(linux_send_samples, &n_samples);
+            pwar_send_buffer_get(linux_send_samples, &n_samples, WIN_BUFFER);
 
             pwar_packet_t packets[32] = {0};
             uint32_t packets_to_send = 0;
-            pwar_router_send_buffer(&linux_router, linux_send_samples, n_samples, CHANNELS, packets, 32, &packets_to_send);
+            pwar_router_send_buffer(&linux_router, linux_send_samples, n_samples, CHANNELS, WIN_BUFFER, packets, 32, &packets_to_send);
             // The packets are now in the packets array, ready to be sent
 
             // NETWORK DELAY
@@ -68,51 +68,34 @@ START_TEST(test_send_and_rcv)
             // (Fake sending the packets to Windows side)
             // Windows side (receiving):
             for (uint32_t p = 0; p < packets_to_send; ++p) {
-                // Windows output buffer
-                float win_output_buffers[CHANNELS][WIN_BUFFER] = {0};
-                float *win_output_ptrs[CHANNELS];
-                for (uint32_t ch = 0; ch < CHANNELS; ++ch) {
-                    win_output_ptrs[ch] = win_output_buffers[ch];
-                }
-                int r = pwar_router_process_packet(&win_router, &packets[p], win_output_ptrs, WIN_BUFFER, CHANNELS);
+                float win_output_buffers[CHANNELS * WIN_BUFFER] = {0};
+                int r = pwar_router_process_packet(&win_router, &packets[p], win_output_buffers, WIN_BUFFER, CHANNELS, WIN_BUFFER);
 
                 if (r == 1) {
                     // FAKE PROCESSING..
                     // Packet ready and we have output to send to Linux side
-                    pwar_router_send_buffer(&linux_router, win_output_ptrs, WIN_BUFFER, CHANNELS, packets, 32, &packets_to_send);
+                    pwar_router_send_buffer(&linux_router, win_output_buffers, WIN_BUFFER, CHANNELS, WIN_BUFFER, packets, 32, &packets_to_send);
                 }
             }
 
             // NETWORK DELAY
             for (uint32_t p = 0; p < packets_to_send; ++p) {
-                // Linux side (receiving):
-                float linux_output_buffers[CHANNELS][WIN_BUFFER] = {0};
-                float *linux_output_ptrs[CHANNELS];
-                for (uint32_t ch = 0; ch < CHANNELS; ++ch) {
-                    linux_output_ptrs[ch] = linux_output_buffers[ch];
-                }
-
-                int r = pwar_router_process_packet(&linux_router, &packets[p], linux_output_ptrs, WIN_BUFFER, CHANNELS);
+                float linux_output_buffers[CHANNELS * WIN_BUFFER] = {0};
+                int r = pwar_router_process_packet(&linux_router, &packets[p], linux_output_buffers, WIN_BUFFER, CHANNELS, WIN_BUFFER);
                 if (r == 1) {
-                    // We now have a new package on the Linux side, push it to the receive buffer
-                    pwar_rcv_buffer_add_buffer(linux_output_ptrs, WIN_BUFFER, CHANNELS);
+                    pwar_rcv_buffer_add_buffer(linux_output_buffers, WIN_BUFFER, CHANNELS, WIN_BUFFER);
                 }
             }
         }
 
         // Linux side: Get a chunk from the receive buffer
-        float linux_rcv_buffers[CHANNELS][CHUNK_SIZE] = {0};
-        float *linux_rcv_ptrs[CHANNELS];
-        for (uint32_t ch = 0; ch < CHANNELS; ++ch) {
-            linux_rcv_ptrs[ch] = linux_rcv_buffers[ch];
-        }
-
-        pwar_rcv_get_chunk(linux_rcv_ptrs, CHANNELS);
+        float linux_rcv_buffers[CHANNELS * CHUNK_SIZE] = {0};
+        pwar_rcv_get_chunk(linux_rcv_buffers, CHANNELS, CHUNK_SIZE);
 
         // Push the received chunk to the result samples
         for (uint32_t ch = 0; ch < CHANNELS; ++ch) {
             for (uint32_t s = 0; s < CHUNK_SIZE; ++s) {
-                result_samples[ch][start + s] = linux_rcv_buffers[ch][s];
+                result_samples[ch * n_test_samples + start + s] = linux_rcv_buffers[ch * CHUNK_SIZE + s];
             }
         }
     }
@@ -127,8 +110,8 @@ START_TEST(test_send_and_rcv)
     uint32_t max_testable = n_test_samples - (WIN_BUFFER - CHUNK_SIZE);
     for (uint32_t s = 0; s < max_testable; ++s) {
         ck_assert_float_eq_tol(
-            result_samples[0][s + WIN_BUFFER - CHUNK_SIZE],
-            test_samples[0][s],
+            result_samples[0 * n_test_samples + s + WIN_BUFFER - CHUNK_SIZE],
+            test_samples[0 * n_test_samples + s],
             0.0001f
         );
     }
