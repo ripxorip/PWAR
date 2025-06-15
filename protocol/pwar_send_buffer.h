@@ -11,6 +11,5 @@ void pwar_send_buffer_init(uint32_t channels, uint32_t max_samples);
 uint32_t pwar_send_buffer_push(float **samples, uint32_t n_samples);
 int pwar_send_buffer_ready();
 void pwar_send_buffer_get(float **out_channels, uint32_t *n_samples);
-void pwar_send_buffer_reset();
 
 #endif /* PWAR_SEND_BUFFER */

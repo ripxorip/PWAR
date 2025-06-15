@@ -38,8 +38,6 @@ void pwar_send_buffer_get(float **out_channels, uint32_t *n_samples) {
         }
     }
     if (n_samples) *n_samples = sb.n_samples;
-}
-
-void pwar_send_buffer_reset() {
+    // Automatically reset after reading out samples
     sb.n_samples = 0;
 }

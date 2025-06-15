@@ -1,5 +1,5 @@
 CC = gcc
-CFLAGS = -Wall -Wextra -g
+CFLAGS = -Wall -Wextra -g -lm
 OUTDIR = _out
 TARGET = $(OUTDIR)/pwar_router_test
 TARGET_RCV = $(OUTDIR)/pwar_rcv_buffer_test
