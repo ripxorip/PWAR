@@ -1,3 +1,35 @@
+/*
+ * Integration Test: Send-Receive Chain for PWAR Protocol
+ *
+ * This test simulates the full data flow of the PWAR protocol between two endpoints (e.g., Linux and Windows).
+ * It demonstrates how to use the main PWAR components together:
+ *
+ *   - pwar_send_buffer: Buffers outgoing audio data in blocks/chunks.
+ *   - pwar_router: Serializes buffered data into packets for network transfer, and deserializes received packets.
+ *   - pwar_rcv_buffer: Buffers received audio data for consumption.
+ *
+ * Data Flow (as simulated in this test):
+ *
+ *   1. Application pushes audio data to pwar_send_buffer (Linux side).
+ *   2. When enough data is buffered, pwar_send_buffer provides a block to pwar_router.
+ *   3. pwar_router serializes the block into packets (to be sent over the network).
+ *   4. Packets are (in reality) sent over the network to the other endpoint (Windows side).
+ *   5. On the receiving side, pwar_router processes incoming packets and reconstructs audio blocks.
+ *   6. Reconstructed blocks are sent back (simulating a round-trip or echo for test purposes).
+ *   7. The original sender receives the returned packets, processes them with pwar_router, and adds the result to pwar_rcv_buffer.
+ *   8. Application reads output audio data from pwar_rcv_buffer.
+ *
+ * In production:
+ *   - Steps 1, 2, and 8 are typically in the audio callback or main processing loop.
+ *   - Steps 3 and 5 are called when sending/receiving network packets.
+ *   - Step 7 is called when a full block is reconstructed from received packets.
+ *
+ * This test can be used as a reference for integrating the send/receive chain in your own application.
+ *
+ * To run the test:
+ *   cd protocol/test && make && ./_out/pwar_send_receive_chain_test
+ */
+
 #include <check.h>
 #include <string.h>
 #include <stdint.h>
