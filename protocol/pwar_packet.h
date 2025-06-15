@@ -13,6 +13,16 @@
 #define PWAR_PACKET_CHUNK_SIZE 128
 #define PWAR_CHANNELS 2
 
+/*
+ * NOTE: This packet structure is currently locked to 2 channels (PWAR_CHANNELS = 2) for simplicity and compatibility.
+ * The underlying protocol and codebase are designed to support an arbitrary number of channels in the future.
+ *
+ * When multi-channel support is implemented, this struct will be refactored to use a flat sample array with stride,
+ * rather than a fixed 2D array. This will allow for more flexible and efficient handling of any channel count.
+ *
+ * If you are developing for more than 2 channels, be aware that this is a planned area of development.
+ */
+
 typedef struct {
     uint16_t n_samples;
     uint64_t seq;

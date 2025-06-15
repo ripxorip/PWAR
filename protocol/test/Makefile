@@ -36,6 +36,13 @@ $(TARGET_CHAIN): $(SRCS_CHAIN) | $(OUTDIR)
 	@echo "Compiling: $@"
 	$(CC) $(CFLAGS) $(INCLUDES) $(CHECK_CFLAGS) -o $@ $(SRCS_CHAIN) $(CHECK_LIBS)
 
+run: all
+	@echo "Running all tests..."
+	@$(TARGET)
+	@$(TARGET_RCV)
+	@$(TARGET_SEND)
+	@$(TARGET_CHAIN)
+
 clean:
 	rm -rf $(OUTDIR)
 

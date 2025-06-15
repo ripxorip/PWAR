@@ -13,14 +13,16 @@ void pwar_router_init(pwar_router_t *router, uint32_t channel_count) {
     router->channel_count = channel_count;
     router->received_packets = 0;
     for (uint32_t i = 0; i < PWAR_ROUTER_MAX_BUFFER_SIZE / PWAR_PACKET_CHUNK_SIZE; ++i) router->packet_received[i] = 0;
+    router->current_seq = (uint64_t)(-1); // Initialize to invalid seq
 }
 
 int pwar_router_process_packet(pwar_router_t *router, pwar_packet_t *input_packet, float *output_buffers, const uint32_t output_size, uint32_t channel_count, uint32_t stride) {
     if (!input_packet || !output_buffers) return -1;
     if (input_packet->num_packets == 0 || input_packet->packet_index >= input_packet->num_packets) return -2;
     if (input_packet->n_samples > PWAR_PACKET_CHUNK_SIZE) return -3;
-    // Only reset state when starting a new buffer (packet_index == 0)
-    if (input_packet->packet_index == 0) {
+    // Reset state if new buffer sequence detected
+    if (input_packet->seq != router->current_seq) {
+        router->current_seq = input_packet->seq;
         router->received_packets = 0;
         for (uint32_t i = 0; i < PWAR_ROUTER_MAX_BUFFER_SIZE / PWAR_PACKET_CHUNK_SIZE; ++i) router->packet_received[i] = 0;
     }

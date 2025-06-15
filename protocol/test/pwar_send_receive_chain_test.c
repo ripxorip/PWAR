@@ -13,16 +13,20 @@
  *   1. Application pushes audio data to pwar_send_buffer (Linux side).
  *   2. When enough data is buffered, pwar_send_buffer provides a block to pwar_router.
  *   3. pwar_router serializes the block into packets (to be sent over the network).
- *   4. Packets are (in reality) sent over the network to the other endpoint (Windows side).
- *   5. On the receiving side, pwar_router processes incoming packets and reconstructs audio blocks.
- *   6. Reconstructed blocks are sent back (simulating a round-trip or echo for test purposes).
- *   7. The original sender receives the returned packets, processes them with pwar_router, and adds the result to pwar_rcv_buffer.
- *   8. Application reads output audio data from pwar_rcv_buffer.
+ *   4. Each packet is assigned a sequence number (seq) that uniquely identifies the buffer transaction.
+ *      All packets for a given buffer share the same seq value. The seq is incremented for each new buffer.
+ *   5. Packets are (in reality) sent over the network to the other endpoint (Windows side).
+ *   6. On the receiving side, pwar_router uses the seq field to correctly reassemble packets into the original buffer,
+ *      regardless of arrival order or network reordering.
+ *   7. Reconstructed blocks are sent back (simulating a round-trip or echo for test purposes), again with a new seq value.
+ *   8. The original sender receives the returned packets, processes them with pwar_router, and adds the result to pwar_rcv_buffer.
+ *   9. Application reads output audio data from pwar_rcv_buffer.
  *
  * In production:
- *   - Steps 1, 2, and 8 are typically in the audio callback or main processing loop.
- *   - Steps 3 and 5 are called when sending/receiving network packets.
- *   - Step 7 is called when a full block is reconstructed from received packets.
+ *   - Steps 1, 2, and 9 are typically in the audio callback or main processing loop.
+ *   - Steps 3, 4, and 6 are called when sending/receiving network packets.
+ *   - Step 8 is called when a full block is reconstructed from received packets.
+ *   - The seq field is critical for robust UDP streaming, ensuring correct buffer assembly even with out-of-order delivery.
  *
  * This test can be used as a reference for integrating the send/receive chain in your own application.
  *
@@ -74,6 +78,8 @@ START_TEST(test_send_and_rcv)
     // Initialize Windows side
     pwar_router_init(&win_router, CHANNELS);
 
+    uint32_t seq = 0;
+
     // Loop over the test_samples in chunks
     for (uint32_t start = 0; start < n_test_samples; start += CHUNK_SIZE) {
         // Linux side:
@@ -93,7 +99,11 @@ START_TEST(test_send_and_rcv)
             pwar_packet_t packets[32] = {0};
             uint32_t packets_to_send = 0;
             pwar_router_send_buffer(&linux_router, linux_send_samples, n_samples, CHANNELS, WIN_BUFFER, packets, 32, &packets_to_send);
-            // The packets are now in the packets array, ready to be sent
+            seq++;
+            // Set seq for all packets in this buffer
+            for (uint32_t i = 0; i < packets_to_send; ++i) {
+                packets[i].seq = seq;
+            }
 
             // NETWORK DELAY
 
@@ -107,6 +117,10 @@ START_TEST(test_send_and_rcv)
                     // FAKE PROCESSING..
                     // Packet ready and we have output to send to Linux side
                     pwar_router_send_buffer(&linux_router, win_output_buffers, WIN_BUFFER, CHANNELS, WIN_BUFFER, packets, 32, &packets_to_send);
+                    // Set seq for all packets in this buffer
+                    for (uint32_t i = 0; i < packets_to_send; ++i) {
+                        packets[i].seq = seq;
+                    }
                 }
             }
 
