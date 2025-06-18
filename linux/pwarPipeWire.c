@@ -72,6 +72,11 @@ static void setup_recv_socket(struct data *data, int port) {
         perror("recv socket creation failed");
         exit(EXIT_FAILURE);
     }
+    // Increase UDP receive buffer to 1MB to reduce risk of overrun
+    int rcvbuf = 1024 * 1024;
+    if (setsockopt(data->recv_sockfd, SOL_SOCKET, SO_RCVBUF, &rcvbuf, sizeof(rcvbuf)) < 0) {
+        perror("setsockopt SO_RCVBUF failed");
+    }
     struct sockaddr_in recv_addr;
     memset(&recv_addr, 0, sizeof(recv_addr));
     recv_addr.sin_family = AF_INET;
@@ -84,8 +89,24 @@ static void setup_recv_socket(struct data *data, int port) {
 }
 
 static void *receiver_thread(void *userdata) {
+    // Set real-time scheduling to minimize jitter
+    struct sched_param sp = { .sched_priority = 90 };
+    if (pthread_setschedparam(pthread_self(), SCHED_FIFO, &sp) != 0) {
+        perror("Warning: Failed to set SCHED_FIFO for receiver_thread");
+    }
+
     struct data *data = (struct data *)userdata;
     rt_stream_packet_t packet;
+    // Latency stats
+    static double min_total = 1e9, max_total = 0, sum_total = 0;
+    static double min_daw = 1e9, max_daw = 0, sum_daw = 0;
+    static double min_net = 1e9, max_net = 0, sum_net = 0;
+    static uint64_t last_print_ns = 0;
+    static int count = 0;
+    struct timespec ts;
+    clock_gettime(CLOCK_MONOTONIC, &ts);
+    last_print_ns = (uint64_t)ts.tv_sec * 1000000000 + ts.tv_nsec;
+
     while (1) {
         ssize_t n = recvfrom(data->recv_sockfd, &packet, sizeof(packet), 0, NULL, NULL);
         if (n == (ssize_t)sizeof(packet)) {
@@ -95,7 +116,6 @@ static void *receiver_thread(void *userdata) {
             pthread_cond_signal(&data->packet_cond);
             pthread_mutex_unlock(&data->packet_mutex);
 
-            struct timespec ts;
             clock_gettime(CLOCK_MONOTONIC, &ts);
             uint64_t ts_return = (uint64_t)ts.tv_sec * 1000000000 + ts.tv_nsec;
             uint64_t total_latency = ts_return - packet.ts_pipewire_send;
@@ -104,8 +124,37 @@ static void *receiver_thread(void *userdata) {
             double total_latency_ms = total_latency / 1000000.0;
             double daw_latency_ms = daw_latency / 1000000.0;
             double network_latency_ms = network_latency / 1000000.0;
-            printf("Received packet seq: %lu, Total Latency: %.2f ms, DAW Latency: %.2f ms, Network Latency: %.2f ms\n",
-                   packet.seq, total_latency_ms, daw_latency_ms, network_latency_ms);
+
+            // Update stats
+            if (total_latency_ms < min_total) min_total = total_latency_ms;
+            if (total_latency_ms > max_total) max_total = total_latency_ms;
+            sum_total += total_latency_ms;
+
+            if (daw_latency_ms < min_daw) min_daw = daw_latency_ms;
+            if (daw_latency_ms > max_daw) max_daw = daw_latency_ms;
+            sum_daw += daw_latency_ms;
+
+            if (network_latency_ms < min_net) min_net = network_latency_ms;
+            if (network_latency_ms > max_net) max_net = network_latency_ms;
+            sum_net += network_latency_ms;
+
+            count++;
+
+            // Print every 2 seconds
+            uint64_t now_ns = ts_return;
+            if (now_ns - last_print_ns >= 2 * 1000000000ULL) {
+                double avg_total = count ? sum_total / count : 0;
+                double avg_daw = count ? sum_daw / count : 0;
+                double avg_net = count ? sum_net / count : 0;
+                printf("[2s] Packets: %d | Total Latency: min %.2f ms, max %.2f ms, avg %.2f ms | DAW: min %.2f ms, max %.2f ms, avg %.2f ms | Net: min %.2f ms, max %.2f ms, avg %.2f ms\n",
+                    count, min_total, max_total, avg_total, min_daw, max_daw, avg_daw, min_net, max_net, avg_net);
+                // Reset stats
+                min_total = min_daw = min_net = 1e9;
+                max_total = max_daw = max_net = 0;
+                sum_total = sum_daw = sum_net = 0;
+                count = 0;
+                last_print_ns = now_ns;
+            }
         }
     }
     return NULL;
