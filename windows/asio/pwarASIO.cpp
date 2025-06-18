@@ -20,7 +20,13 @@
 #include "pwarASIO.h"
 #include "pwarASIOLog.h"
 #include "../../protocol/pwar_packet.h"
+#include <avrt.h>
 #pragma comment(lib, "ws2_32.lib")
+#pragma comment(lib, "avrt.lib")
+
+#ifndef SIO_UDP_CONNRESET
+#define SIO_UDP_CONNRESET _WSAIOW(IOC_VENDOR,12)
+#endif
 
 static constexpr double TWO_RAISED_TO_32 = 4294967296.0;
 static constexpr double TWO_RAISED_TO_32_RECIP = 1.0 / TWO_RAISED_TO_32;
@@ -336,7 +342,13 @@ ASIOError pwarASIO::future(long selector, void* opt) {
 
 void pwarASIO::output(const rt_stream_packet_t& packet) {
     if (udpSendSocket != INVALID_SOCKET) {
-        sendto(udpSendSocket, reinterpret_cast<const char*>(&packet), sizeof(rt_stream_packet_t), 0, reinterpret_cast<const sockaddr*>(&udpSendAddr), sizeof(udpSendAddr));
+        WSABUF buffer;
+        buffer.buf = reinterpret_cast<CHAR*>(const_cast<rt_stream_packet_t*>(&packet));
+        buffer.len = sizeof(rt_stream_packet_t);
+        DWORD bytesSent = 0;
+        int flags = 0;
+        WSASendTo(udpSendSocket, &buffer, 1, &bytesSent, flags,
+                  reinterpret_cast<sockaddr*>(&udpSendAddr), sizeof(udpSendAddr), NULL, NULL);
     }
 }
 
@@ -390,14 +402,42 @@ void pwarASIO::udp_packet_listener() {
     int n;
     socklen_t len;
     char buffer[2048];
+
+    // --- Raise thread priority and register with MMCSS ---
+    SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_TIME_CRITICAL);
+    DWORD mmcssTaskIndex = 0;
+    HANDLE mmcssHandle = AvSetMmThreadCharacteristicsA("Pro Audio", &mmcssTaskIndex);
+    // Debug: verify thread priority and MMCSS registration
+    int prio = GetThreadPriority(GetCurrentThread());
+    if (prio != THREAD_PRIORITY_TIME_CRITICAL) {
+        pwarASIOLog::Send("Warning: Thread priority not set to TIME_CRITICAL!");
+    } else {
+        pwarASIOLog::Send("Thread priority set to TIME_CRITICAL.");
+    }
+    if (!mmcssHandle) {
+        pwarASIOLog::Send("Warning: MMCSS registration failed!");
+    } else {
+        pwarASIOLog::Send("MMCSS registration succeeded.");
+    }
+    // -----------------------------------------------------
+
     if (WSAStartup(MAKEWORD(2,2), &wsaData) != 0) {
+        if (mmcssHandle) AvRevertMmThreadCharacteristics(mmcssHandle);
         return;
     }
     sockfd = socket(AF_INET, SOCK_DGRAM, 0);
     if (sockfd == INVALID_SOCKET) {
         WSACleanup();
+        if (mmcssHandle) AvRevertMmThreadCharacteristics(mmcssHandle);
         return;
     }
+    // Set SO_RCVBUF to minimal size for low latency
+    int rcvbuf = 1024; // 1 KB
+    setsockopt(sockfd, SOL_SOCKET, SO_RCVBUF, (const char*)&rcvbuf, sizeof(rcvbuf));
+    // Disable UDP connection reset behavior
+    DWORD bytesReturned = 0;
+    BOOL bNewBehavior = FALSE;
+    WSAIoctl(sockfd, SIO_UDP_CONNRESET, &bNewBehavior, sizeof(bNewBehavior), NULL, 0, &bytesReturned, NULL, NULL);
     memset(&servaddr, 0, sizeof(servaddr));
     servaddr.sin_family = AF_INET;
     servaddr.sin_addr.s_addr = INADDR_ANY;
@@ -410,8 +450,13 @@ void pwarASIO::udp_packet_listener() {
     udpListenerRunning = true;
     while (udpListenerRunning) {
         len = sizeof(cliaddr);
-        n = recvfrom(sockfd, buffer, sizeof(buffer), 0, reinterpret_cast<sockaddr*>(&cliaddr), &len);
-        if (n > 0 && n >= static_cast<int>(sizeof(rt_stream_packet_t))) {
+        WSABUF wsaBuf;
+        wsaBuf.buf = buffer;
+        wsaBuf.len = sizeof(buffer);
+        DWORD bytesReceived = 0;
+        DWORD flags = 0;
+        int res = WSARecvFrom(sockfd, &wsaBuf, 1, &bytesReceived, &flags, reinterpret_cast<sockaddr*>(&cliaddr), &len, NULL, NULL);
+        if (res == 0 && bytesReceived >= sizeof(rt_stream_packet_t)) {
             rt_stream_packet_t pkt;
             memcpy(&pkt, buffer, sizeof(rt_stream_packet_t));
             _timestamp = std::chrono::duration_cast<std::chrono::nanoseconds>(
@@ -482,6 +527,14 @@ void pwarASIO::initUdpSender() {
             udpSendAddr.sin_family = AF_INET;
             udpSendAddr.sin_port = htons(udp_port);
             inet_pton(AF_INET, udpSendIp.c_str(), &udpSendAddr.sin_addr);
+            // Set SO_SNDBUF to minimal size for low latency
+            int sndbuf = 1024; // 1 KB
+            setsockopt(udpSendSocket, SOL_SOCKET, SO_SNDBUF, (const char*)&sndbuf, sizeof(sndbuf));
+            // Disable UDP connection reset behavior
+            DWORD bytesReturned = 0;
+            BOOL bNewBehavior = FALSE;
+            WSAIoctl(udpSendSocket, SIO_UDP_CONNRESET, &bNewBehavior, sizeof(bNewBehavior),
+                     NULL, 0, &bytesReturned, NULL, NULL);
         } else {
             pwarASIOLog::Send("Failed to create UDP send socket");
         }
