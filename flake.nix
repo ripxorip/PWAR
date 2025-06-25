@@ -24,23 +24,7 @@
         inherit system;
         overlays = [ ];
       };
-      protocol = builtins.path { path = ./protocol; };
-      pwarPkg = pkgs.stdenv.mkDerivation {
-        pname = "pwarPipeWire";
-        version = "0.1.0";
-        src = ./linux;
-        buildInputs = [ pkgs.pipewire.dev pkgs.pkg-config ];
-        patchPhase = ''
-          rm -rf protocol
-          mkdir protocol
-          cp -r "${protocol}/." protocol
-        '';
-        buildPhase = "make";
-        installPhase = ''
-          mkdir -p $out/bin
-          cp _out/pwarPipeWire $out/bin/
-        '';
-      };
+      pwarPkg = import ./default.nix { inherit pkgs; };
 
     in
     {
