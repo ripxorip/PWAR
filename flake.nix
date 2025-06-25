@@ -24,11 +24,11 @@
         inherit system;
         overlays = [ ];
       };
-      protocol = builtins.path { path = ../protocol; };
+      protocol = builtins.path { path = ./protocol; };
       pwarPkg = pkgs.stdenv.mkDerivation {
         pname = "pwarPipeWire";
         version = "0.1.0";
-        src = ./.;
+        src = ./linux;
         buildInputs = [ pkgs.pipewire.dev pkgs.pkg-config ];
         patchPhase = ''
           rm -rf protocol
