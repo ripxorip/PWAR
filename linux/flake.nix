@@ -24,6 +24,23 @@
         inherit system;
         overlays = [ ];
       };
+      protocol = builtins.path { path = ../protocol; };
+      pwarPkg = pkgs.stdenv.mkDerivation {
+        pname = "pwarPipeWire";
+        version = "0.1.0";
+        src = ./.;
+        buildInputs = [ pkgs.pipewire.dev pkgs.pkg-config ];
+        patchPhase = ''
+          rm -rf protocol
+          mkdir protocol
+          cp -r "${protocol}/." protocol
+        '';
+        buildPhase = "make";
+        installPhase = ''
+          mkdir -p $out/bin
+          cp _out/pwarPipeWire $out/bin/
+        '';
+      };
 
     in
     {
@@ -34,6 +51,10 @@
           pkg-config
           pipewire.dev
         ];
+      };
+      packages.default = pwarPkg;
+      apps.default = flake-utils.lib.mkApp {
+        drv = pwarPkg;
       };
     });
 }

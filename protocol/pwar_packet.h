@@ -5,8 +5,8 @@
  * This file is part of the PipeWire ASIO Relay (PWAR) project.
  */
 
-#ifndef RT_STREAM_PACKET_H
-#define RT_STREAM_PACKET_H
+#ifndef PWAR_PACKET
+#define PWAR_PACKET
 
 #include <stdint.h>
 
@@ -23,4 +23,4 @@ typedef struct {
     float samples_ch2[RT_STREAM_PACKET_FRAME_SIZE/2];
 } rt_stream_packet_t;
 
-#endif // RT_STREAM_PACKET_H
+#endif /* PWAR_PACKET */

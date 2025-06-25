@@ -1,5 +1,5 @@
 CC = gcc
-CFLAGS += $(shell pkg-config --cflags libpipewire-0.3) -I../protocol -Wall
+CFLAGS += -Iprotocol $(shell pkg-config --cflags libpipewire-0.3) -I../protocol -Wall
 LDFLAGS = -lm $(shell pkg-config --libs libpipewire-0.3)
 TARGET = pwarPipeWire
 SRCS = pwarPipeWire.c
