@@ -221,8 +221,8 @@ static void on_process(void *userdata, struct spa_io_position *position) {
     }
     pthread_mutex_unlock(&data->packet_mutex);
     if (!got_packet) {
-        fprintf(stderr, "--- ERROR -- No valid packet received, outputting silence\n");
-        fprintf(stderr, "I wanted seq: %u and got seq: %lu\n", data->seq - 1, data->latest_packet.seq);
+        printf("--- ERROR -- No valid packet received, outputting silence\n");
+        printf("I wanted seq: %u and got seq: %lu\n", data->seq - 1, data->latest_packet.seq);
         if (left_out)
             memset(left_out, 0, n_samples * sizeof(float));
         if (right_out)
