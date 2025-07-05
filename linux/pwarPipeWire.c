@@ -40,6 +40,7 @@ struct data {
     struct port *right_out_port;
     float sine_phase;
     uint8_t test_mode;
+    uint8_t passthrough_test; // Add passthrough_test flag
     uint32_t seq;
     int sockfd;
     struct sockaddr_in servaddr;
@@ -188,6 +189,13 @@ static void on_process(void *userdata, struct spa_io_position *position) {
     float *right_out = pw_filter_get_dsp_buffer(data->right_out_port, position->clock.duration);
 
     uint32_t n_samples = position->clock.duration;
+    if (data->passthrough_test) {
+        if (left_out)
+            memcpy(left_out, in, n_samples * sizeof(float));
+        if (right_out)
+            memcpy(right_out, in, n_samples * sizeof(float));
+        return;
+    }
     if (data->test_mode) {
         for (uint32_t n = 0; n < n_samples; n++) {
             if (data->sine_phase >= 2 * M_PI)
@@ -244,6 +252,7 @@ int main(int argc, char *argv[]) {
     char stream_ip[64] = DEFAULT_STREAM_IP;
     int stream_port = DEFAULT_STREAM_PORT;
     int test_mode = 0;
+    int passthrough_test = 0;
     for (int i = 1; i < argc; ++i) {
         if ((strcmp(argv[i], "--ip") == 0 || strcmp(argv[i], "-i") == 0) && i + 1 < argc) {
             strncpy(stream_ip, argv[++i], sizeof(stream_ip) - 1);
@@ -252,6 +261,8 @@ int main(int argc, char *argv[]) {
             stream_port = atoi(argv[++i]);
         } else if ((strcmp(argv[i], "--test") == 0) || (strcmp(argv[i], "-t") == 0)) {
             test_mode = 1;
+        } else if ((strcmp(argv[i], "--passthrough_test") == 0) || (strcmp(argv[i], "-pt") == 0)) {
+            passthrough_test = 1;
         }
     }
     char latency[32];
@@ -276,6 +287,7 @@ int main(int argc, char *argv[]) {
     pw_loop_add_signal(pw_main_loop_get_loop(data.loop), SIGINT, do_quit, &data);
     pw_loop_add_signal(pw_main_loop_get_loop(data.loop), SIGTERM, do_quit, &data);
     data.test_mode = test_mode;
+    data.passthrough_test = passthrough_test;
     data.sine_phase = 0.0f;
     data.filter = pw_filter_new_simple(
         pw_main_loop_get_loop(data.loop),
