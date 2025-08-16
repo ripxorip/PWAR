@@ -2,8 +2,14 @@ CC = gcc
 CFLAGS += -Iprotocol $(shell pkg-config --cflags libpipewire-0.3) -I../protocol -Wall
 LDFLAGS = -lm $(shell pkg-config --libs libpipewire-0.3)
 TARGET = pwarPipeWire
-SRCS = pwarPipeWire.c
-OBJS = $(addprefix $(OUTDIR)/, $(SRCS:.c=.o))
+SRCS = pwarPipeWire.c \
+       ../protocol/pwar_router.c \
+       ../protocol/pwar_send_buffer.c \
+       ../protocol/pwar_rcv_buffer.c
+OBJS = $(OUTDIR)/pwarPipeWire.o \
+       $(OUTDIR)/pwar_router.o \
+       $(OUTDIR)/pwar_send_buffer.o \
+       $(OUTDIR)/pwar_rcv_buffer.o
 OUTDIR = _out
 Q = @
 
@@ -24,6 +30,15 @@ $(TORTURE_TARGET): $(TORTURE_OBJ)
 	$(Q)$(CC) $(CFLAGS) -o $(OUTDIR)/$(TORTURE_TARGET) $(TORTURE_OBJ) $(LDFLAGS)
 
 $(OUTDIR)/%.o: %.c
+	$(Q)$(CC) $(CFLAGS) -c $< -o $@
+
+$(OUTDIR)/pwar_router.o: ../protocol/pwar_router.c
+	$(Q)$(CC) $(CFLAGS) -c $< -o $@
+
+$(OUTDIR)/pwar_send_buffer.o: ../protocol/pwar_send_buffer.c
+	$(Q)$(CC) $(CFLAGS) -c $< -o $@
+
+$(OUTDIR)/pwar_rcv_buffer.o: ../protocol/pwar_rcv_buffer.c
 	$(Q)$(CC) $(CFLAGS) -c $< -o $@
 
 $(OUTDIR)/torture.o: torture.c

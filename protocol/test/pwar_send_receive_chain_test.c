@@ -116,7 +116,7 @@ START_TEST(test_send_and_rcv)
                 if (r == 1) {
                     // FAKE PROCESSING..
                     // Packet ready and we have output to send to Linux side
-                    pwar_router_send_buffer(&linux_router, win_output_buffers, WIN_BUFFER, CHANNELS, WIN_BUFFER, packets, 32, &packets_to_send);
+                    pwar_router_send_buffer(&win_router, win_output_buffers, WIN_BUFFER, CHANNELS, WIN_BUFFER, packets, 32, &packets_to_send);
                     // Set seq for all packets in this buffer
                     for (uint32_t i = 0; i < packets_to_send; ++i) {
                         packets[i].seq = seq;

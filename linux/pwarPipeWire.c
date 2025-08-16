@@ -23,8 +23,16 @@
 #include <pipewire/filter.h>
 #include "pwar_packet.h"
 
+#include "pwar_router.h"
+#include "pwar_send_buffer.h"
+#include "pwar_rcv_buffer.h"
+
 #define DEFAULT_STREAM_IP "192.168.66.3"
 #define DEFAULT_STREAM_PORT 8321
+
+#define NUM_CHANNELS 2
+#define WINDOWS_BUFFER_SIZE 1024
+#define CHUNK_SIZE 128
 
 struct data;
 
@@ -48,8 +56,10 @@ struct data {
 
     pthread_mutex_t packet_mutex;
     pthread_cond_t packet_cond;
-    rt_stream_packet_t latest_packet;
+    pwar_packet_t latest_packet;
     int packet_available;
+
+    pwar_router_t linux_router;
 };
 
 static void setup_recv_socket(struct data *data, int port);
@@ -91,7 +101,7 @@ static void *receiver_thread(void *userdata) {
     }
 
     struct data *data = (struct data *)userdata;
-    rt_stream_packet_t packet;
+    pwar_packet_t packet;
     // Latency stats
     static double min_total = 1e9, max_total = 0, sum_total = 0;
     static double min_daw = 1e9, max_daw = 0, sum_daw = 0;
@@ -169,16 +179,80 @@ static void setup_socket(struct data *data, const char *ip, int port) {
 
 static void stream_buffer(float *samples, uint32_t n_samples, void *userdata) {
     struct data *data = (struct data *)userdata;
-    rt_stream_packet_t packet;
+    pwar_packet_t packet;
     packet.seq = data->seq++;
     packet.n_samples = n_samples;
-    memcpy(packet.samples_ch1, samples, n_samples * sizeof(float));
+    // Just stream the first channel for now.. FIXME: This should be updated to handle multiple channels properly in the future
+    memcpy(packet.samples[0], samples, n_samples * sizeof(float));
     struct timespec ts;
     clock_gettime(CLOCK_MONOTONIC, &ts);
     uint64_t timestamp = (uint64_t)ts.tv_sec * 1000000000 + ts.tv_nsec;
     packet.ts_pipewire_send = timestamp;
     if (sendto(data->sockfd, &packet, sizeof(packet), 0, (struct sockaddr *)&data->servaddr, sizeof(data->servaddr)) < 0) {
         perror("sendto failed");
+    }
+}
+
+static void process_one_shot(void *userdata, float *in, uint32_t n_samples, float *left_out, float *right_out) {
+    struct data *data = (struct data *)userdata;
+    stream_buffer(in, n_samples, data);
+    int got_packet = 0;
+    struct timespec ts;
+    clock_gettime(CLOCK_REALTIME, &ts);
+    ts.tv_nsec += 2 * 1000 * 1000;
+    if (ts.tv_nsec >= 1000000000) {
+        ts.tv_sec += 1;
+        ts.tv_nsec -= 1000000000;
+    }
+    pthread_mutex_lock(&data->packet_mutex);
+    while (!data->packet_available) {
+        int rc = pthread_cond_timedwait(&data->packet_cond, &data->packet_mutex, &ts);
+        if (rc == ETIMEDOUT)
+            break;
+    }
+    if (data->packet_available) {
+        if (left_out)
+            memcpy(left_out, data->latest_packet.samples[0], n_samples * sizeof(float));
+        if (right_out)
+            memcpy(right_out, data->latest_packet.samples[1], n_samples * sizeof(float));
+        got_packet = 1;
+        data->packet_available = 0;
+    }
+    pthread_mutex_unlock(&data->packet_mutex);
+    if (!got_packet) {
+        printf("\033[0;31m--- ERROR -- No valid packet received, outputting silence\n");
+        printf("I wanted seq: %u and got seq: %lu\033[0m\n", data->seq - 1, data->latest_packet.seq);
+        if (left_out)
+            memset(left_out, 0, n_samples * sizeof(float));
+        if (right_out)
+            memset(right_out, 0, n_samples * sizeof(float));
+    }
+}
+
+static void process_ping_pong(void *userdata, float *in, uint32_t n_samples, float *left_out, float *right_out) {
+    struct data *data = (struct data *)userdata;
+    pwar_send_buffer_push(in, n_samples, NUM_CHANNELS, n_samples);
+
+    if (pwar_send_buffer_ready()) {
+        float linux_send_samples[NUM_CHANNELS * WINDOWS_BUFFER_SIZE];
+        uint32_t n_samples = 0;
+        pwar_send_buffer_get(linux_send_samples, &n_samples, WINDOWS_BUFFER_SIZE);
+
+        pwar_packet_t packets[32] = {0};
+        uint32_t packets_to_send = 0;
+        pwar_router_send_buffer(&data->linux_router, linux_send_samples, n_samples, NUM_CHANNELS, WINDOWS_BUFFER_SIZE, packets, 32, &packets_to_send);
+
+        for (uint32_t i = 0; i < packets_to_send; ++i) {
+            packets[i].seq = data->seq++;
+
+            struct timespec ts;
+            clock_gettime(CLOCK_MONOTONIC, &ts);
+            uint64_t timestamp = (uint64_t)ts.tv_sec * 1000000000 + ts.tv_nsec;
+            packets[i].ts_pipewire_send = timestamp;
+            if (sendto(data->sockfd, &packets[i], sizeof(packets[i]), 0, (struct sockaddr *)&data->servaddr, sizeof(data->servaddr)) < 0) {
+                perror("sendto failed");
+            }
+        }
     }
 }
 
@@ -204,37 +278,14 @@ static void on_process(void *userdata, struct spa_io_position *position) {
             data->sine_phase += 2 * M_PI * 440 / 48000;
         }
     }
-    stream_buffer(in, n_samples, data);
-    int got_packet = 0;
-    struct timespec ts;
-    clock_gettime(CLOCK_REALTIME, &ts);
-    ts.tv_nsec += 2 * 1000 * 1000;
-    if (ts.tv_nsec >= 1000000000) {
-        ts.tv_sec += 1;
-        ts.tv_nsec -= 1000000000;
+
+    if (CHUNK_SIZE == WINDOWS_BUFFER_SIZE) {
+        // Use one-shot processing, i.e. Linux send, Windows process, Linux receive in one go
+        process_one_shot(data, in, n_samples, left_out, right_out);
     }
-    pthread_mutex_lock(&data->packet_mutex);
-    while (!data->packet_available) {
-        int rc = pthread_cond_timedwait(&data->packet_cond, &data->packet_mutex, &ts);
-        if (rc == ETIMEDOUT)
-            break;
-    }
-    if (data->packet_available) {
-        if (left_out)
-            memcpy(left_out, data->latest_packet.samples_ch1, n_samples * sizeof(float));
-        if (right_out)
-            memcpy(right_out, data->latest_packet.samples_ch2, n_samples * sizeof(float));
-        got_packet = 1;
-        data->packet_available = 0;
-    }
-    pthread_mutex_unlock(&data->packet_mutex);
-    if (!got_packet) {
-        printf("\033[0;31m--- ERROR -- No valid packet received, outputting silence\n");
-        printf("I wanted seq: %u and got seq: %lu\033[0m\n", data->seq - 1, data->latest_packet.seq);
-        if (left_out)
-            memset(left_out, 0, n_samples * sizeof(float));
-        if (right_out)
-            memset(right_out, 0, n_samples * sizeof(float));
+    else {
+        // Use ping-pong processing, i.e. Linux send, Windows process, Linux receive in chunks
+        process_ping_pong(data, in, n_samples, left_out, right_out);
     }
 }
 
@@ -289,6 +340,10 @@ int main(int argc, char *argv[]) {
     data.test_mode = test_mode;
     data.passthrough_test = passthrough_test;
     data.sine_phase = 0.0f;
+
+    pwar_router_init(&data.linux_router, NUM_CHANNELS);
+    pwar_send_buffer_init(NUM_CHANNELS, WINDOWS_BUFFER_SIZE);
+
     data.filter = pw_filter_new_simple(
         pw_main_loop_get_loop(data.loop),
         "pwar",
