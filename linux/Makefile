@@ -18,7 +18,16 @@ TORTURE_TARGET = pwar_torture
 TORTURE_SRC = torture.c
 TORTURE_OBJ = $(OUTDIR)/torture.o
 
-all: dir $(TARGET) $(TORTURE_TARGET)
+# Add windows_sim target
+WINDOWS_SIM_TARGET = windows_sim
+WINDOWS_SIM_SRC = windows_sim.c
+WINDOWS_SIM_OBJ = $(OUTDIR)/windows_sim.o
+WINDOWS_SIM_OBJS = $(WINDOWS_SIM_OBJ) \
+	$(OUTDIR)/pwar_router.o \
+	$(OUTDIR)/pwar_send_buffer.o \
+	$(OUTDIR)/pwar_rcv_buffer.o
+
+all: dir $(TARGET) $(TORTURE_TARGET) $(WINDOWS_SIM_TARGET)
 
 dir:
 	$(Q)mkdir -p $(OUTDIR)
@@ -28,6 +37,9 @@ $(TARGET): $(OBJS)
 
 $(TORTURE_TARGET): $(TORTURE_OBJ)
 	$(Q)$(CC) $(CFLAGS) -o $(OUTDIR)/$(TORTURE_TARGET) $(TORTURE_OBJ) $(LDFLAGS)
+
+$(WINDOWS_SIM_TARGET): $(WINDOWS_SIM_OBJS)
+	$(Q)$(CC) $(CFLAGS) -o $(OUTDIR)/$(WINDOWS_SIM_TARGET) $(WINDOWS_SIM_OBJS) $(LDFLAGS)
 
 $(OUTDIR)/%.o: %.c
 	$(Q)$(CC) $(CFLAGS) -c $< -o $@
@@ -44,8 +56,12 @@ $(OUTDIR)/pwar_rcv_buffer.o: ../protocol/pwar_rcv_buffer.c
 $(OUTDIR)/torture.o: torture.c
 	$(Q)$(CC) $(CFLAGS) -c $< -o $@
 
+$(OUTDIR)/windows_sim.o: windows_sim.c
+	$(Q)$(CC) $(CFLAGS) -c $< -o $@
+
 clean:
 	$(Q)rm -f $(OUTDIR)/*.o
 	$(Q)rm -f $(OUTDIR)/$(TARGET)
 	$(Q)rm -f $(OUTDIR)/$(TORTURE_TARGET)
+	$(Q)rm -f $(OUTDIR)/$(WINDOWS_SIM_TARGET)
 	$(Q)rmdir $(OUTDIR)
