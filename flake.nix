@@ -24,6 +24,7 @@
         inherit system;
         overlays = [ ];
       };
+      pwarPkg = import ./default.nix { inherit pkgs; };
 
     in
     {
@@ -35,6 +36,10 @@
           pkg-config
           pipewire.dev
         ];
+      };
+      packages.default = pwarPkg;
+      apps.default = flake-utils.lib.mkApp {
+        drv = pwarPkg;
       };
     });
 }

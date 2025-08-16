@@ -24,7 +24,6 @@
 #include "pwar_packet.h"
 
 #define DEFAULT_STREAM_IP "192.168.66.3"
-#define DEFAULT_MIDI_STREAM_IP "10.0.0.184"
 #define DEFAULT_STREAM_PORT 8321
 
 struct data;
@@ -39,16 +38,13 @@ struct data {
     struct port *in_port;
     struct port *left_out_port;
     struct port *right_out_port;
-    struct port *midi_in_port;
     float sine_phase;
     uint8_t test_mode;
+    uint8_t passthrough_test; // Add passthrough_test flag
     uint32_t seq;
     int sockfd;
     struct sockaddr_in servaddr;
     int recv_sockfd;
-
-    int midi_sockfd;
-    struct sockaddr_in midi_servaddr;
 
     pthread_mutex_t packet_mutex;
     pthread_cond_t packet_cond;
@@ -60,7 +56,6 @@ static void setup_recv_socket(struct data *data, int port);
 static void *receiver_thread(void *userdata);
 
 static void setup_socket(struct data *data, const char *ip, int port);
-static void setup_midi_socket(struct data *data, const char *ip, int port);
 
 static void stream_buffer(float *samples, uint32_t n_samples, void *userdata);
 static void on_process(void *userdata, struct spa_io_position *position);
@@ -71,6 +66,11 @@ static void setup_recv_socket(struct data *data, int port) {
     if (data->recv_sockfd < 0) {
         perror("recv socket creation failed");
         exit(EXIT_FAILURE);
+    }
+    // Increase UDP receive buffer to 1MB to reduce risk of overrun
+    int rcvbuf = 1024 * 1024;
+    if (setsockopt(data->recv_sockfd, SOL_SOCKET, SO_RCVBUF, &rcvbuf, sizeof(rcvbuf)) < 0) {
+        perror("setsockopt SO_RCVBUF failed");
     }
     struct sockaddr_in recv_addr;
     memset(&recv_addr, 0, sizeof(recv_addr));
@@ -84,8 +84,24 @@ static void setup_recv_socket(struct data *data, int port) {
 }
 
 static void *receiver_thread(void *userdata) {
+    // Set real-time scheduling to minimize jitter
+    struct sched_param sp = { .sched_priority = 90 };
+    if (pthread_setschedparam(pthread_self(), SCHED_FIFO, &sp) != 0) {
+        perror("Warning: Failed to set SCHED_FIFO for receiver_thread");
+    }
+
     struct data *data = (struct data *)userdata;
     rt_stream_packet_t packet;
+    // Latency stats
+    static double min_total = 1e9, max_total = 0, sum_total = 0;
+    static double min_daw = 1e9, max_daw = 0, sum_daw = 0;
+    static double min_net = 1e9, max_net = 0, sum_net = 0;
+    static uint64_t last_print_ns = 0;
+    static int count = 0;
+    struct timespec ts;
+    clock_gettime(CLOCK_MONOTONIC, &ts);
+    last_print_ns = (uint64_t)ts.tv_sec * 1000000000 + ts.tv_nsec;
+
     while (1) {
         ssize_t n = recvfrom(data->recv_sockfd, &packet, sizeof(packet), 0, NULL, NULL);
         if (n == (ssize_t)sizeof(packet)) {
@@ -95,7 +111,6 @@ static void *receiver_thread(void *userdata) {
             pthread_cond_signal(&data->packet_cond);
             pthread_mutex_unlock(&data->packet_mutex);
 
-            struct timespec ts;
             clock_gettime(CLOCK_MONOTONIC, &ts);
             uint64_t ts_return = (uint64_t)ts.tv_sec * 1000000000 + ts.tv_nsec;
             uint64_t total_latency = ts_return - packet.ts_pipewire_send;
@@ -104,23 +119,40 @@ static void *receiver_thread(void *userdata) {
             double total_latency_ms = total_latency / 1000000.0;
             double daw_latency_ms = daw_latency / 1000000.0;
             double network_latency_ms = network_latency / 1000000.0;
-            printf("Received packet seq: %lu, Total Latency: %.2f ms, DAW Latency: %.2f ms, Network Latency: %.2f ms\n",
-                   packet.seq, total_latency_ms, daw_latency_ms, network_latency_ms);
+
+            // Update stats
+            if (total_latency_ms < min_total) min_total = total_latency_ms;
+            if (total_latency_ms > max_total) max_total = total_latency_ms;
+            sum_total += total_latency_ms;
+
+            if (daw_latency_ms < min_daw) min_daw = daw_latency_ms;
+            if (daw_latency_ms > max_daw) max_daw = daw_latency_ms;
+            sum_daw += daw_latency_ms;
+
+            if (network_latency_ms < min_net) min_net = network_latency_ms;
+            if (network_latency_ms > max_net) max_net = network_latency_ms;
+            sum_net += network_latency_ms;
+
+            count++;
+
+            // Print every 2 seconds
+            uint64_t now_ns = ts_return;
+            if (now_ns - last_print_ns >= 2 * 1000000000ULL) {
+                double avg_total = count ? sum_total / count : 0;
+                double avg_daw = count ? sum_daw / count : 0;
+                double avg_net = count ? sum_net / count : 0;
+                printf("[2s] Packets: %d | Total Latency: min %.2f ms, max %.2f ms, avg %.2f ms | DAW: min %.2f ms, max %.2f ms, avg %.2f ms | Net: min %.2f ms, max %.2f ms, avg %.2f ms\n",
+                    count, min_total, max_total, avg_total, min_daw, max_daw, avg_daw, min_net, max_net, avg_net);
+                // Reset stats
+                min_total = min_daw = min_net = 1e9;
+                max_total = max_daw = max_net = 0;
+                sum_total = sum_daw = sum_net = 0;
+                count = 0;
+                last_print_ns = now_ns;
+            }
         }
     }
     return NULL;
-}
-
-static void setup_midi_socket(struct data *data, const char *ip, int port) {
-    data->midi_sockfd = socket(AF_INET, SOCK_DGRAM, 0);
-    if (data->midi_sockfd < 0) {
-        perror("socket creation failed");
-        exit(EXIT_FAILURE);
-    }
-    memset(&data->midi_servaddr, 0, sizeof(data->midi_servaddr));
-    data->midi_servaddr.sin_family = AF_INET;
-    data->midi_servaddr.sin_port = htons(port);
-    data->midi_servaddr.sin_addr.s_addr = inet_addr(ip);
 }
 
 static void setup_socket(struct data *data, const char *ip, int port) {
@@ -155,30 +187,15 @@ static void on_process(void *userdata, struct spa_io_position *position) {
     float *in = pw_filter_get_dsp_buffer(data->in_port, position->clock.duration);
     float *left_out = pw_filter_get_dsp_buffer(data->left_out_port, position->clock.duration);
     float *right_out = pw_filter_get_dsp_buffer(data->right_out_port, position->clock.duration);
-    struct pw_buffer *midi_buf = pw_filter_dequeue_buffer(data->midi_in_port);
-
-    // FIXME: This is a hack to get the MIDI data from the first buffer.
-    // In a real application, you would want to handle multiple buffers and MIDI events properly. (Good first issue)
-    if (midi_buf && midi_buf->buffer && midi_buf->buffer->datas[0].data && midi_buf->buffer->datas[0].chunk) {
-        uint8_t midi_bytes[3];
-        uint8_t *midi_data = midi_buf->buffer->datas[0].data;
-        uint32_t midi_size = midi_buf->buffer->datas[0].chunk->size;
-
-        if (midi_size == 40) {
-            midi_bytes[0] = midi_data[32];
-            midi_bytes[1] = midi_data[33];
-            midi_bytes[2] = midi_data[34];
-            printf("Sending MIDI data: %02x %02x %02x\n", midi_bytes[0], midi_bytes[1], midi_bytes[2]);
-            // Ready to send MIDI data
-            if (sendto(data->midi_sockfd, midi_bytes, sizeof(midi_bytes), 0,
-                       (struct sockaddr *)&data->midi_servaddr, sizeof(data->midi_servaddr)) < 0) {
-                perror("sendto MIDI failed");
-            }
-        }
-        pw_filter_queue_buffer(data->midi_in_port, midi_buf);
-    }
 
     uint32_t n_samples = position->clock.duration;
+    if (data->passthrough_test) {
+        if (left_out)
+            memcpy(left_out, in, n_samples * sizeof(float));
+        if (right_out)
+            memcpy(right_out, in, n_samples * sizeof(float));
+        return;
+    }
     if (data->test_mode) {
         for (uint32_t n = 0; n < n_samples; n++) {
             if (data->sine_phase >= 2 * M_PI)
@@ -212,8 +229,8 @@ static void on_process(void *userdata, struct spa_io_position *position) {
     }
     pthread_mutex_unlock(&data->packet_mutex);
     if (!got_packet) {
-        fprintf(stderr, "--- ERROR -- No valid packet received, outputting silence\n");
-        fprintf(stderr, "I wanted seq: %u and got seq: %lu\n", data->seq - 1, data->latest_packet.seq);
+        printf("\033[0;31m--- ERROR -- No valid packet received, outputting silence\n");
+        printf("I wanted seq: %u and got seq: %lu\033[0m\n", data->seq - 1, data->latest_packet.seq);
         if (left_out)
             memset(left_out, 0, n_samples * sizeof(float));
         if (right_out)
@@ -233,9 +250,9 @@ static void do_quit(void *userdata, int signal_number) {
 
 int main(int argc, char *argv[]) {
     char stream_ip[64] = DEFAULT_STREAM_IP;
-    char midi_stream_ip[64] = DEFAULT_MIDI_STREAM_IP;
     int stream_port = DEFAULT_STREAM_PORT;
     int test_mode = 0;
+    int passthrough_test = 0;
     for (int i = 1; i < argc; ++i) {
         if ((strcmp(argv[i], "--ip") == 0 || strcmp(argv[i], "-i") == 0) && i + 1 < argc) {
             strncpy(stream_ip, argv[++i], sizeof(stream_ip) - 1);
@@ -244,6 +261,8 @@ int main(int argc, char *argv[]) {
             stream_port = atoi(argv[++i]);
         } else if ((strcmp(argv[i], "--test") == 0) || (strcmp(argv[i], "-t") == 0)) {
             test_mode = 1;
+        } else if ((strcmp(argv[i], "--passthrough_test") == 0) || (strcmp(argv[i], "-pt") == 0)) {
+            passthrough_test = 1;
         }
     }
     char latency[32];
@@ -256,7 +275,6 @@ int main(int argc, char *argv[]) {
     struct spa_pod_builder b = SPA_POD_BUILDER_INIT(buffer, sizeof(buffer));
 
     setup_socket(&data, stream_ip, stream_port);
-    setup_midi_socket(&data, midi_stream_ip, stream_port);
 
     setup_recv_socket(&data, stream_port);
     pthread_mutex_init(&data.packet_mutex, NULL);
@@ -269,6 +287,7 @@ int main(int argc, char *argv[]) {
     pw_loop_add_signal(pw_main_loop_get_loop(data.loop), SIGINT, do_quit, &data);
     pw_loop_add_signal(pw_main_loop_get_loop(data.loop), SIGTERM, do_quit, &data);
     data.test_mode = test_mode;
+    data.passthrough_test = passthrough_test;
     data.sine_phase = 0.0f;
     data.filter = pw_filter_new_simple(
         pw_main_loop_get_loop(data.loop),
@@ -307,16 +326,6 @@ int main(int argc, char *argv[]) {
             PW_KEY_PORT_NAME, "output-right",
             NULL),
         NULL, 0);
-
-    data.midi_in_port = pw_filter_add_port(data.filter,
-            PW_DIRECTION_INPUT,
-            0,
-            sizeof(struct port),
-            pw_properties_new(
-                PW_KEY_FORMAT_DSP, "8 bit raw midi",
-                PW_KEY_PORT_NAME, "midi-in",
-                NULL),
-            NULL, 0);
 
     params[0] = spa_process_latency_build(&b,
         SPA_PARAM_ProcessLatency,
