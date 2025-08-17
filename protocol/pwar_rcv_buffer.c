@@ -1,5 +1,6 @@
 #include <string.h>
 #include "pwar_rcv_buffer.h"
+#include <stdio.h>
 
 #define PWAR_RCV_BUFFER_MAX_CHANNELS 16
 #define PWAR_RCV_BUFFER_MAX_SAMPLES 4096
@@ -23,8 +24,6 @@ int pwar_rcv_buffer_add_buffer(float *buffer, uint32_t n_samples, uint32_t chann
     rcv.n_samples[idx] = n_samples;
     rcv.channels = channels;
     rcv.buffer_ready[idx] = 1;
-    rcv.chunk_pos = 0; // reset chunk position for new buffer
-    rcv.ping_pong = !rcv.ping_pong; // swap buffers
     return 0;
 }
 
@@ -35,20 +34,12 @@ int pwar_rcv_get_chunk(float *chunks, uint32_t channels, uint32_t stride) {
         for (uint32_t ch = 0; ch < channels; ++ch) {
             memset(&chunks[ch * stride], 0, PWAR_RCV_BUFFER_CHUNK_SIZE * sizeof(float));
         }
+        rcv.ping_pong = !rcv.ping_pong; // swap buffers
+        printf("\033[0;31m--- ERROR -- No valid buffer ready, outputting silence\033[0m\n");
         return 0;
     }
     uint32_t n_samples = rcv.n_samples[idx];
     uint32_t start = rcv.chunk_pos * PWAR_RCV_BUFFER_CHUNK_SIZE;
-    if (start >= n_samples) {
-        // End of buffer, mark as consumed
-        rcv.buffer_ready[idx] = 0;
-        rcv.chunk_pos = 0;
-        // Output silence until next buffer is ready
-        for (uint32_t ch = 0; ch < channels; ++ch) {
-            memset(&chunks[ch * stride], 0, PWAR_RCV_BUFFER_CHUNK_SIZE * sizeof(float));
-        }
-        return 0;
-    }
     // Copy chunk
     for (uint32_t ch = 0; ch < channels; ++ch) {
         uint32_t remain = n_samples - start;
@@ -63,6 +54,7 @@ int pwar_rcv_get_chunk(float *chunks, uint32_t channels, uint32_t stride) {
     if ((rcv.chunk_pos * PWAR_RCV_BUFFER_CHUNK_SIZE) >= n_samples) {
         rcv.buffer_ready[idx] = 0;
         rcv.chunk_pos = 0;
+        rcv.ping_pong = !rcv.ping_pong; // swap buffers
     }
     return 1;
 }

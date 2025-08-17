@@ -111,54 +111,65 @@ static void *receiver_thread(void *userdata) {
     struct timespec ts;
     clock_gettime(CLOCK_MONOTONIC, &ts);
     last_print_ns = (uint64_t)ts.tv_sec * 1000000000 + ts.tv_nsec;
+    float linux_output_buffers[NUM_CHANNELS * WINDOWS_BUFFER_SIZE] = {0};
 
     while (1) {
         ssize_t n = recvfrom(data->recv_sockfd, &packet, sizeof(packet), 0, NULL, NULL);
         if (n == (ssize_t)sizeof(packet)) {
-            pthread_mutex_lock(&data->packet_mutex);
-            data->latest_packet = packet;
-            data->packet_available = 1;
-            pthread_cond_signal(&data->packet_cond);
-            pthread_mutex_unlock(&data->packet_mutex);
+            if (CHUNK_SIZE != WINDOWS_BUFFER_SIZE) {
+                // Ping pong mode
+                int r = pwar_router_process_packet(&data->linux_router, &packet, linux_output_buffers, WINDOWS_BUFFER_SIZE, NUM_CHANNELS, WINDOWS_BUFFER_SIZE);
+                if (r == 1) {
+                    pwar_rcv_buffer_add_buffer(linux_output_buffers, WINDOWS_BUFFER_SIZE, NUM_CHANNELS, WINDOWS_BUFFER_SIZE);
+                }
+            }
+            else {
+                // Oneshot mode
+                pthread_mutex_lock(&data->packet_mutex);
+                data->latest_packet = packet;
+                data->packet_available = 1;
+                pthread_cond_signal(&data->packet_cond);
+                pthread_mutex_unlock(&data->packet_mutex);
 
-            clock_gettime(CLOCK_MONOTONIC, &ts);
-            uint64_t ts_return = (uint64_t)ts.tv_sec * 1000000000 + ts.tv_nsec;
-            uint64_t total_latency = ts_return - packet.ts_pipewire_send;
-            uint64_t daw_latency = packet.ts_asio_send - packet.ts_pipewire_send;
-            uint64_t network_latency = total_latency - daw_latency;
-            double total_latency_ms = total_latency / 1000000.0;
-            double daw_latency_ms = daw_latency / 1000000.0;
-            double network_latency_ms = network_latency / 1000000.0;
+                clock_gettime(CLOCK_MONOTONIC, &ts);
+                uint64_t ts_return = (uint64_t)ts.tv_sec * 1000000000 + ts.tv_nsec;
+                uint64_t total_latency = ts_return - packet.ts_pipewire_send;
+                uint64_t daw_latency = packet.ts_asio_send - packet.ts_pipewire_send;
+                uint64_t network_latency = total_latency - daw_latency;
+                double total_latency_ms = total_latency / 1000000.0;
+                double daw_latency_ms = daw_latency / 1000000.0;
+                double network_latency_ms = network_latency / 1000000.0;
 
-            // Update stats
-            if (total_latency_ms < min_total) min_total = total_latency_ms;
-            if (total_latency_ms > max_total) max_total = total_latency_ms;
-            sum_total += total_latency_ms;
+                // Update stats
+                if (total_latency_ms < min_total) min_total = total_latency_ms;
+                if (total_latency_ms > max_total) max_total = total_latency_ms;
+                sum_total += total_latency_ms;
 
-            if (daw_latency_ms < min_daw) min_daw = daw_latency_ms;
-            if (daw_latency_ms > max_daw) max_daw = daw_latency_ms;
-            sum_daw += daw_latency_ms;
+                if (daw_latency_ms < min_daw) min_daw = daw_latency_ms;
+                if (daw_latency_ms > max_daw) max_daw = daw_latency_ms;
+                sum_daw += daw_latency_ms;
 
-            if (network_latency_ms < min_net) min_net = network_latency_ms;
-            if (network_latency_ms > max_net) max_net = network_latency_ms;
-            sum_net += network_latency_ms;
+                if (network_latency_ms < min_net) min_net = network_latency_ms;
+                if (network_latency_ms > max_net) max_net = network_latency_ms;
+                sum_net += network_latency_ms;
 
-            count++;
+                count++;
 
-            // Print every 2 seconds
-            uint64_t now_ns = ts_return;
-            if (now_ns - last_print_ns >= 2 * 1000000000ULL) {
-                double avg_total = count ? sum_total / count : 0;
-                double avg_daw = count ? sum_daw / count : 0;
-                double avg_net = count ? sum_net / count : 0;
-                printf("[2s] Packets: %d | Total Latency: min %.2f ms, max %.2f ms, avg %.2f ms | DAW: min %.2f ms, max %.2f ms, avg %.2f ms | Net: min %.2f ms, max %.2f ms, avg %.2f ms\n",
-                    count, min_total, max_total, avg_total, min_daw, max_daw, avg_daw, min_net, max_net, avg_net);
-                // Reset stats
-                min_total = min_daw = min_net = 1e9;
-                max_total = max_daw = max_net = 0;
-                sum_total = sum_daw = sum_net = 0;
-                count = 0;
-                last_print_ns = now_ns;
+                // Print every 2 seconds
+                uint64_t now_ns = ts_return;
+                if (now_ns - last_print_ns >= 2 * 1000000000ULL) {
+                    double avg_total = count ? sum_total / count : 0;
+                    double avg_daw = count ? sum_daw / count : 0;
+                    double avg_net = count ? sum_net / count : 0;
+                    printf("[2s] Packets: %d | Total Latency: min %.2f ms, max %.2f ms, avg %.2f ms | DAW: min %.2f ms, max %.2f ms, avg %.2f ms | Net: min %.2f ms, max %.2f ms, avg %.2f ms\n",
+                        count, min_total, max_total, avg_total, min_daw, max_daw, avg_daw, min_net, max_net, avg_net);
+                    // Reset stats
+                    min_total = min_daw = min_net = 1e9;
+                    max_total = max_daw = max_net = 0;
+                    sum_total = sum_daw = sum_net = 0;
+                    count = 0;
+                    last_print_ns = now_ns;
+                }
             }
         }
     }
@@ -230,6 +241,7 @@ static void process_one_shot(void *userdata, float *in, uint32_t n_samples, floa
 }
 
 static void process_ping_pong(void *userdata, float *in, uint32_t n_samples, float *left_out, float *right_out) {
+    // IDEA: Why not send every packet immediately instead of waiting for the complete buffer size?
     struct data *data = (struct data *)userdata;
     pwar_send_buffer_push(in, n_samples, NUM_CHANNELS, n_samples);
 
@@ -241,9 +253,10 @@ static void process_ping_pong(void *userdata, float *in, uint32_t n_samples, flo
         pwar_packet_t packets[32] = {0};
         uint32_t packets_to_send = 0;
         pwar_router_send_buffer(&data->linux_router, linux_send_samples, n_samples, NUM_CHANNELS, WINDOWS_BUFFER_SIZE, packets, 32, &packets_to_send);
+        data->seq++;
 
         for (uint32_t i = 0; i < packets_to_send; ++i) {
-            packets[i].seq = data->seq++;
+            packets[i].seq = data->seq;
 
             struct timespec ts;
             clock_gettime(CLOCK_MONOTONIC, &ts);
@@ -253,7 +266,16 @@ static void process_ping_pong(void *userdata, float *in, uint32_t n_samples, flo
                 perror("sendto failed");
             }
         }
+        printf("Sent %u packets with seq %lu\n", packets_to_send, data->seq);
     }
+
+    float linux_rcv_buffers[NUM_CHANNELS * CHUNK_SIZE] = {0};
+    pwar_rcv_get_chunk(linux_rcv_buffers, NUM_CHANNELS, CHUNK_SIZE);
+
+    if (left_out)
+        memcpy(left_out, linux_rcv_buffers, CHUNK_SIZE * sizeof(float));
+    if (right_out)
+        memcpy(right_out, linux_rcv_buffers + CHUNK_SIZE, CHUNK_SIZE * sizeof(float));
 }
 
 static void on_process(void *userdata, struct spa_io_position *position) {
@@ -327,7 +349,7 @@ int main(int argc, char *argv[]) {
 
     setup_socket(&data, stream_ip, stream_port);
 
-    setup_recv_socket(&data, stream_port);
+    setup_recv_socket(&data, DEFAULT_STREAM_PORT);
     pthread_mutex_init(&data.packet_mutex, NULL);
     pthread_cond_init(&data.packet_cond, NULL);
     data.packet_available = 0;
