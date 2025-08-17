@@ -126,6 +126,15 @@ Replace `192.168.66.3` with the IP address of the Windows ASIO host to stream to
 
 ---
 
+## 🗺️ Roadmap
+
+- **Merge PR for variable length frames**: Enables runtime adjustment of buffer size and latency.
+- **Package binaries for major Linux distributions + Windows ASIO Binary**: Simplifies installation and usage.
+- **Add a cross-platform GUI**: Improves usability and configuration.
+- **Reduce jitter for VM setups**: Explore virtio-vsock or ivshmem for inter-VM shared memory, bypassing the network stack for lower latency and jitter.
+
+---
+
 ## 🤝 Contributing
 
 I have limited time to spend on this project, so contributions are very welcome! If you have improvements, bug fixes, or new features, please open a Pull Request (PR). I appreciate your help in making PWAR even better!
