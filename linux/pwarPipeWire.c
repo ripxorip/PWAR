@@ -242,7 +242,37 @@ static void process_one_shot(void *userdata, float *in, uint32_t n_samples, floa
 
 static void process_ping_pong(void *userdata, float *in, uint32_t n_samples, float *left_out, float *right_out) {
     // IDEA: Why not send every packet immediately instead of waiting for the complete buffer size?
+    // Tested below
     struct data *data = (struct data *)userdata;
+    static uint32_t samples_sent = 0;
+
+    // Create a packet for the input samples
+    pwar_packet_t packet;
+    packet.seq = data->seq;
+    packet.n_samples = n_samples;
+
+    // Just stream the first channel for now.. FIXME: This should be updated to handle multiple channels properly in the future
+    memcpy(packet.samples[0], in, n_samples * sizeof(float));
+
+    uint32_t total_packets = WINDOWS_BUFFER_SIZE / CHUNK_SIZE;
+    packet.num_packets = total_packets;
+    packet.packet_index = samples_sent / CHUNK_SIZE;
+
+    struct timespec ts;
+    clock_gettime(CLOCK_MONOTONIC, &ts);
+    uint64_t timestamp = (uint64_t)ts.tv_sec * 1000000000 + ts.tv_nsec;
+    packet.ts_pipewire_send = timestamp;
+    if (sendto(data->sockfd, &packet, sizeof(packet), 0, (struct sockaddr *)&data->servaddr, sizeof(data->servaddr)) < 0) {
+        perror("sendto failed");
+    }
+
+    samples_sent += n_samples;
+    if (samples_sent >= WINDOWS_BUFFER_SIZE) {
+        data->seq++;
+        samples_sent = 0;
+    }
+
+    /*
     pwar_send_buffer_push(in, n_samples, NUM_CHANNELS, n_samples);
 
     if (pwar_send_buffer_ready()) {
@@ -268,6 +298,7 @@ static void process_ping_pong(void *userdata, float *in, uint32_t n_samples, flo
         }
         printf("Sent %u packets with seq %lu\n", packets_to_send, data->seq);
     }
+    */
 
     float linux_rcv_buffers[NUM_CHANNELS * CHUNK_SIZE] = {0};
     pwar_rcv_get_chunk(linux_rcv_buffers, NUM_CHANNELS, CHUNK_SIZE);
