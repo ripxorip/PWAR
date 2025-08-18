@@ -29,8 +29,9 @@
 #define DEFAULT_STREAM_IP "192.168.66.3"
 #define DEFAULT_STREAM_PORT 8321
 
+#define MAX_BUFFER_SIZE 4096
+
 #define NUM_CHANNELS 2
-#define WINDOWS_BUFFER_SIZE 1024
 #define CHUNK_SIZE 128
 
 // TODO: Make CHUNK_SIZE 64 (fixed) even if the PipeWire buffer size is 128, it can be done by sending every packet immediately.
@@ -115,7 +116,8 @@ static void *receiver_thread(void *userdata) {
     struct timespec ts;
     clock_gettime(CLOCK_MONOTONIC, &ts);
     last_print_ns = (uint64_t)ts.tv_sec * 1000000000 + ts.tv_nsec;
-    float linux_output_buffers[NUM_CHANNELS * WINDOWS_BUFFER_SIZE] = {0};
+
+    float linux_output_buffers[NUM_CHANNELS * MAX_BUFFER_SIZE] = {0};
 
     while (1) {
         ssize_t n = recvfrom(data->recv_sockfd, &packet, sizeof(packet), 0, NULL, NULL);
@@ -170,9 +172,11 @@ static void *receiver_thread(void *userdata) {
             }
             else {
                 // Ping pong mode
-                int r = pwar_router_process_packet(&data->linux_router, &packet, linux_output_buffers, WINDOWS_BUFFER_SIZE, NUM_CHANNELS, WINDOWS_BUFFER_SIZE);
-                if (r == 1) {
-                    pwar_rcv_buffer_add_buffer(linux_output_buffers, WINDOWS_BUFFER_SIZE, NUM_CHANNELS, WINDOWS_BUFFER_SIZE);
+                int samples_ready = pwar_router_process_packet(&data->linux_router, &packet, linux_output_buffers, MAX_BUFFER_SIZE, NUM_CHANNELS);
+                if (samples_ready > 0) {
+                    // Print samples ready
+                    printf("Received packet seq: %lu, n_samples: %u, samples_ready: %d\n", packet.seq, packet.n_samples, samples_ready);
+                    pwar_rcv_buffer_add_buffer(linux_output_buffers, samples_ready, NUM_CHANNELS);
                 }
             }
         }

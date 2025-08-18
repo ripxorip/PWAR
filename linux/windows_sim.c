@@ -23,7 +23,7 @@
 #define SIM_PORT 8322
 
 #define CHANNELS 2
-#define BUFFER_SIZE 1024
+#define BUFFER_SIZE 2048
 
 static int recv_sockfd;
 static pthread_mutex_t packet_mutex = PTHREAD_MUTEX_INITIALIZER;
@@ -69,16 +69,16 @@ static void *receiver_thread(void *userdata) {
             //printf("Received packet seq: %lu, n_samples: %u\n", packet.seq, packet.n_samples);
             float output_buffers[CHANNELS * BUFFER_SIZE] = {0};
             packet.num_packets = BUFFER_SIZE / PWAR_PACKET_CHUNK_SIZE;
-            int r = pwar_router_process_streaming_packet(&router, &packet, output_buffers, BUFFER_SIZE, CHANNELS, BUFFER_SIZE);
-            if (r == 1) {
+            int samples_ready = pwar_router_process_streaming_packet(&router, &packet, output_buffers, BUFFER_SIZE, CHANNELS);
+            if (samples_ready > 0) {
                 uint32_t seq = packet.seq;
                 // Process the output buffers as needed
 
                 // Loop back.
                 // But first copy channel 0 to channel 1 for testing
-                for (uint32_t i = 0; i < BUFFER_SIZE; ++i)
+                for (uint32_t i = 0; i < samples_ready; ++i)
                     output_buffers[BUFFER_SIZE + i] = output_buffers[i];
-                pwar_router_send_buffer(&router, output_buffers, BUFFER_SIZE, CHANNELS, BUFFER_SIZE, output_packets, 32, &packets_to_send);
+                pwar_router_send_buffer(&router, output_buffers, samples_ready, CHANNELS, output_packets, 32, &packets_to_send);
 
                 // Set seq for all packets in this buffer
                 for (uint32_t i = 0; i < packets_to_send; ++i) {
