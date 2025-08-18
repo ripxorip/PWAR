@@ -68,7 +68,8 @@ static void *receiver_thread(void *userdata) {
             packet_available = 1;
             //printf("Received packet seq: %lu, n_samples: %u\n", packet.seq, packet.n_samples);
             float output_buffers[CHANNELS * BUFFER_SIZE] = {0};
-            int r = pwar_router_process_packet(&router, &packet, output_buffers, BUFFER_SIZE, CHANNELS, BUFFER_SIZE);
+            packet.num_packets = BUFFER_SIZE / PWAR_PACKET_CHUNK_SIZE;
+            int r = pwar_router_process_streaming_packet(&router, &packet, output_buffers, BUFFER_SIZE, CHANNELS, BUFFER_SIZE);
             if (r == 1) {
                 uint32_t seq = packet.seq;
                 // Process the output buffers as needed

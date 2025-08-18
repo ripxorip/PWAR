@@ -24,7 +24,6 @@
 #include "pwar_packet.h"
 
 #include "pwar_router.h"
-#include "pwar_send_buffer.h"
 #include "pwar_rcv_buffer.h"
 
 #define DEFAULT_STREAM_IP "192.168.66.3"
@@ -33,6 +32,10 @@
 #define NUM_CHANNELS 2
 #define WINDOWS_BUFFER_SIZE 1024
 #define CHUNK_SIZE 128
+
+// TODO: Make CHUNK_SIZE 64 (fixed) even if the PipeWire buffer size is 128, it can be done by sending every packet immediately.
+// Also make oneshot a flag instead. Make it possible for windows to request a buffer size, and dont be sentimental about the tests...
+// it has proven better to run with simulation instead and real audio.
 
 struct data;
 
@@ -49,6 +52,7 @@ struct data {
     float sine_phase;
     uint8_t test_mode;
     uint8_t passthrough_test; // Add passthrough_test flag
+    uint8_t oneshot_mode; // Add oneshot_mode flag
     uint32_t seq;
     int sockfd;
     struct sockaddr_in servaddr;
@@ -116,14 +120,7 @@ static void *receiver_thread(void *userdata) {
     while (1) {
         ssize_t n = recvfrom(data->recv_sockfd, &packet, sizeof(packet), 0, NULL, NULL);
         if (n == (ssize_t)sizeof(packet)) {
-            if (CHUNK_SIZE != WINDOWS_BUFFER_SIZE) {
-                // Ping pong mode
-                int r = pwar_router_process_packet(&data->linux_router, &packet, linux_output_buffers, WINDOWS_BUFFER_SIZE, NUM_CHANNELS, WINDOWS_BUFFER_SIZE);
-                if (r == 1) {
-                    pwar_rcv_buffer_add_buffer(linux_output_buffers, WINDOWS_BUFFER_SIZE, NUM_CHANNELS, WINDOWS_BUFFER_SIZE);
-                }
-            }
-            else {
+            if (data->oneshot_mode) {
                 // Oneshot mode
                 pthread_mutex_lock(&data->packet_mutex);
                 data->latest_packet = packet;
@@ -169,6 +166,13 @@ static void *receiver_thread(void *userdata) {
                     sum_total = sum_daw = sum_net = 0;
                     count = 0;
                     last_print_ns = now_ns;
+                }
+            }
+            else {
+                // Ping pong mode
+                int r = pwar_router_process_packet(&data->linux_router, &packet, linux_output_buffers, WINDOWS_BUFFER_SIZE, NUM_CHANNELS, WINDOWS_BUFFER_SIZE);
+                if (r == 1) {
+                    pwar_rcv_buffer_add_buffer(linux_output_buffers, WINDOWS_BUFFER_SIZE, NUM_CHANNELS, WINDOWS_BUFFER_SIZE);
                 }
             }
         }
@@ -217,6 +221,7 @@ static void process_one_shot(void *userdata, float *in, uint32_t n_samples, floa
     }
     pthread_mutex_lock(&data->packet_mutex);
     while (!data->packet_available) {
+        // Wait for packet or timeout (no ping-pong)
         int rc = pthread_cond_timedwait(&data->packet_cond, &data->packet_mutex, &ts);
         if (rc == ETIMEDOUT)
             break;
@@ -241,22 +246,15 @@ static void process_one_shot(void *userdata, float *in, uint32_t n_samples, floa
 }
 
 static void process_ping_pong(void *userdata, float *in, uint32_t n_samples, float *left_out, float *right_out) {
-    // IDEA: Why not send every packet immediately instead of waiting for the complete buffer size?
-    // Tested below
     struct data *data = (struct data *)userdata;
-    static uint32_t samples_sent = 0;
 
     // Create a packet for the input samples
     pwar_packet_t packet;
-    packet.seq = data->seq;
+    packet.seq = data->seq++;
     packet.n_samples = n_samples;
 
     // Just stream the first channel for now.. FIXME: This should be updated to handle multiple channels properly in the future
     memcpy(packet.samples[0], in, n_samples * sizeof(float));
-
-    uint32_t total_packets = WINDOWS_BUFFER_SIZE / CHUNK_SIZE;
-    packet.num_packets = total_packets;
-    packet.packet_index = samples_sent / CHUNK_SIZE;
 
     struct timespec ts;
     clock_gettime(CLOCK_MONOTONIC, &ts);
@@ -266,41 +264,8 @@ static void process_ping_pong(void *userdata, float *in, uint32_t n_samples, flo
         perror("sendto failed");
     }
 
-    samples_sent += n_samples;
-    if (samples_sent >= WINDOWS_BUFFER_SIZE) {
-        data->seq++;
-        samples_sent = 0;
-    }
-
-    /*
-    pwar_send_buffer_push(in, n_samples, NUM_CHANNELS, n_samples);
-
-    if (pwar_send_buffer_ready()) {
-        float linux_send_samples[NUM_CHANNELS * WINDOWS_BUFFER_SIZE];
-        uint32_t n_samples = 0;
-        pwar_send_buffer_get(linux_send_samples, &n_samples, WINDOWS_BUFFER_SIZE);
-
-        pwar_packet_t packets[32] = {0};
-        uint32_t packets_to_send = 0;
-        pwar_router_send_buffer(&data->linux_router, linux_send_samples, n_samples, NUM_CHANNELS, WINDOWS_BUFFER_SIZE, packets, 32, &packets_to_send);
-        data->seq++;
-
-        for (uint32_t i = 0; i < packets_to_send; ++i) {
-            packets[i].seq = data->seq;
-
-            struct timespec ts;
-            clock_gettime(CLOCK_MONOTONIC, &ts);
-            uint64_t timestamp = (uint64_t)ts.tv_sec * 1000000000 + ts.tv_nsec;
-            packets[i].ts_pipewire_send = timestamp;
-            if (sendto(data->sockfd, &packets[i], sizeof(packets[i]), 0, (struct sockaddr *)&data->servaddr, sizeof(data->servaddr)) < 0) {
-                perror("sendto failed");
-            }
-        }
-        printf("Sent %u packets with seq %lu\n", packets_to_send, data->seq);
-    }
-    */
-
     float linux_rcv_buffers[NUM_CHANNELS * CHUNK_SIZE] = {0};
+    // Get the chunk from n-1 (ping-pong)
     pwar_rcv_get_chunk(linux_rcv_buffers, NUM_CHANNELS, CHUNK_SIZE);
 
     if (left_out)
@@ -332,7 +297,7 @@ static void on_process(void *userdata, struct spa_io_position *position) {
         }
     }
 
-    if (CHUNK_SIZE == WINDOWS_BUFFER_SIZE) {
+    if (data->oneshot_mode) {
         // Use one-shot processing, i.e. Linux send, Windows process, Linux receive in one go
         process_one_shot(data, in, n_samples, left_out, right_out);
     }
@@ -357,6 +322,7 @@ int main(int argc, char *argv[]) {
     int stream_port = DEFAULT_STREAM_PORT;
     int test_mode = 0;
     int passthrough_test = 0;
+    int oneshot_mode = 0;
     for (int i = 1; i < argc; ++i) {
         if ((strcmp(argv[i], "--ip") == 0 || strcmp(argv[i], "-i") == 0) && i + 1 < argc) {
             strncpy(stream_ip, argv[++i], sizeof(stream_ip) - 1);
@@ -367,6 +333,8 @@ int main(int argc, char *argv[]) {
             test_mode = 1;
         } else if ((strcmp(argv[i], "--passthrough_test") == 0) || (strcmp(argv[i], "-pt") == 0)) {
             passthrough_test = 1;
+        } else if ((strcmp(argv[i], "--oneshot") == 0)) {
+            oneshot_mode = 1;
         }
     }
     char latency[32];
@@ -392,10 +360,10 @@ int main(int argc, char *argv[]) {
     pw_loop_add_signal(pw_main_loop_get_loop(data.loop), SIGTERM, do_quit, &data);
     data.test_mode = test_mode;
     data.passthrough_test = passthrough_test;
+    data.oneshot_mode = oneshot_mode;
     data.sine_phase = 0.0f;
 
     pwar_router_init(&data.linux_router, NUM_CHANNELS);
-    pwar_send_buffer_init(NUM_CHANNELS, WINDOWS_BUFFER_SIZE);
 
     data.filter = pw_filter_new_simple(
         pw_main_loop_get_loop(data.loop),

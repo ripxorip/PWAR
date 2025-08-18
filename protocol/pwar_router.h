@@ -33,6 +33,8 @@ void pwar_router_init(pwar_router_t *router, uint32_t channel_count);
 // stride: number of samples per channel
 int pwar_router_process_packet(pwar_router_t *router, pwar_packet_t *input_packet, float *output_buffers, const uint32_t output_size, uint32_t channel_count, uint32_t stride);
 
+int pwar_router_process_streaming_packet(pwar_router_t *router, pwar_packet_t *input_packet, float *output_buffers, const uint32_t output_size, uint32_t channel_count, uint32_t stride);
+
 // samples: flat array, channel-major order: samples[channel * stride + sample]
 // n_samples: number of samples per channel
 // channel_count: number of channels
