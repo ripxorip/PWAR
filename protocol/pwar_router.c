@@ -66,7 +66,6 @@ int pwar_router_process_packet(pwar_router_t *router, pwar_packet_t *input_packe
 int pwar_router_send_buffer(pwar_router_t *router, uint32_t chunk_size, float *samples, uint32_t n_samples, uint32_t channel_count, pwar_packet_t *packets, const uint32_t packet_count, uint32_t *packets_to_send) {
     (void)router; // Unused in this implementation, but could be used for future enhancements
     if (!samples || !packets || !packets_to_send || channel_count == 0 || n_samples == 0) return -2;
-    printf("Sending %u samples in %u channels, chunk size: %u\n", n_samples, channel_count, chunk_size);
     uint32_t total_packets = (n_samples + chunk_size - 1) / chunk_size;
     if (total_packets > packet_count) {
         *packets_to_send = 0;

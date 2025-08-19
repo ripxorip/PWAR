@@ -37,6 +37,14 @@ struct data {
     uint8_t test_mode;
     pid_t pid_pipewire;
     pid_t pid_windows_sim;
+    // Pattern injection/detection fields
+    int inject_pattern;
+    uint32_t inject_sample_idx;
+    uint32_t detect_sample_idx_in;
+    uint32_t detect_sample_idx_in2;
+    int pattern_detected_in;
+    int pattern_detected_in2;
+    uint64_t global_sample_idx; // Absolute sample counter
 };
 
 static void on_process(void *userdata, struct spa_io_position *position) {
@@ -49,19 +57,34 @@ static void on_process(void *userdata, struct spa_io_position *position) {
     float *test_out_right = pw_filter_get_dsp_buffer(data->test_out_right, position->clock.duration);
 
     uint32_t n_samples = position->clock.duration;
+    static const float pattern = 0.999f; // Unique value unlikely in sine
     for (uint32_t n = 0; n < n_samples; n++) {
         if (data->sine_phase >= 2 * M_PI)
             data->sine_phase -= 2 * M_PI;
         float val1 = sinf(data->sine_phase) * 0.5f;
+        data->sine_phase += 2.0f * M_PI * 440.0f / 48000.0f; // Increment phase for 440Hz sine at 48kHz
         float dummy_val = dummy_in ? dummy_in[n] : 0.0f;
-        if (out)
-            out[n] = val1; // Output only the sine
-        if (test_out_left && in) {
-            test_out_left[n] = in[n];
+
+        // Inject pattern if requested
+        if (data->inject_pattern) {
+            if (out) out[n] = pattern;
+            data->inject_pattern = 0;
+            data->inject_sample_idx = data->global_sample_idx;
+        } else {
+            if (out) out[n] = val1;
         }
-        if (test_out_right && in2) {
-            test_out_right[n] = in2[n];
+
+        // Detect pattern in in/in2
+        if (in && !data->pattern_detected_in && fabsf(in[n] - pattern) < 1e-5) {
+            data->detect_sample_idx_in = data->global_sample_idx;
+            data->pattern_detected_in = 1;
+            // Print the delay as ms (48khz sample rate)
+            printf("[integration_test] Pattern detected in input delay: %.2f ms\n", (data->global_sample_idx - data->inject_sample_idx) * 1000.0f / 48000.0f);
         }
+
+        if (test_out_left && in) test_out_left[n] = in[n];
+        if (test_out_right && in2) test_out_right[n] = in2[n];
+        data->global_sample_idx++; // Increment global sample counter
     }
 }
 
@@ -112,7 +135,7 @@ void *test_thread_func(void *arg) {
     data->pid_pipewire = fork();
     if (data->pid_pipewire == 0) {
         // Child process: exec pwarPipeWire with arguments
-        execl("../_out/pwarPipeWire", "pwarPipeWire", "--ip", "127.0.0.1", "--port", "8322", "--test", (char *)NULL);
+        execl("../_out/pwarPipeWire", "pwarPipeWire", "--ip", "127.0.0.1", "--port", "8322", (char *)NULL);
         perror("execl pwarPipeWire");
         exit(1);
     } else if (data->pid_pipewire < 0) {
@@ -140,8 +163,24 @@ void *test_thread_func(void *arg) {
     ret = system("pw-link integration_test:test-out-left alsa_output.pci-0000_00_1f.3.analog-stereo:playback_FL");
     ret = system("pw-link integration_test:test-out-right alsa_output.pci-0000_00_1f.3.analog-stereo:playback_FR");
 
+    // Key press detection loop
+    printf("[integration_test] Press RET to inject pattern into sine stream.\n");
     while (1) {
-        sleep(1); // Keep the thread alive
+        // Non-blocking key press detection
+        fd_set set;
+        struct timeval timeout;
+        FD_ZERO(&set);
+        FD_SET(0, &set); // stdin
+        timeout.tv_sec = 0;
+        timeout.tv_usec = 100000; // 100ms
+        int rv = select(1, &set, NULL, NULL, &timeout);
+        if (rv > 0) {
+            int c = getchar();
+            data->inject_pattern = 1;
+            data->pattern_detected_in = 0;
+            data->pattern_detected_in2 = 0;
+            printf("[integration_test] RET pressed, will inject pattern.\n");
+        }
     }
     return NULL;
 }
@@ -151,6 +190,7 @@ int main(int argc, char *argv[]) {
     memset(&data, 0, sizeof(data));
     data.test_mode = 1;
     data.sine_phase = 0.0f;
+    data.global_sample_idx = 0;
 
     pw_init(&argc, &argv);
     data.loop = pw_main_loop_new(NULL);

@@ -23,7 +23,7 @@
 #define SIM_PORT 8322
 
 #define CHANNELS 2
-#define BUFFER_SIZE 2048
+#define BUFFER_SIZE 128
 
 static int recv_sockfd;
 static pthread_mutex_t packet_mutex = PTHREAD_MUTEX_INITIALIZER;
@@ -70,7 +70,7 @@ static void *receiver_thread(void *userdata) {
             float output_buffers[CHANNELS * BUFFER_SIZE] = {0};
             uint32_t chunk_size = packet.n_samples;
             packet.num_packets = BUFFER_SIZE / chunk_size;
-            printf("Processing packet seq: %lu, n_samples: %u, num_packets: %u\n", packet.seq, packet.n_samples, packet.num_packets);
+            //printf("Processing packet seq: %lu, n_samples: %u, num_packets: %u\n", packet.seq, packet.n_samples, packet.num_packets);
             int samples_ready = pwar_router_process_streaming_packet(&router, &packet, output_buffers, BUFFER_SIZE, CHANNELS);
             if (samples_ready > 0) {
                 uint32_t seq = packet.seq;

@@ -173,8 +173,6 @@ static void *receiver_thread(void *userdata) {
                 // Ping pong mode
                 int samples_ready = pwar_router_process_packet(&data->linux_router, &packet, linux_output_buffers, MAX_BUFFER_SIZE, NUM_CHANNELS);
                 if (samples_ready > 0) {
-                    // Print samples ready
-                    printf("Received packet seq: %lu, n_samples: %u, samples_ready: %d\n", packet.seq, packet.n_samples, samples_ready);
                     pwar_rcv_buffer_add_buffer(linux_output_buffers, samples_ready, NUM_CHANNELS);
                 }
             }
