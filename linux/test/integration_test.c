@@ -51,7 +51,6 @@ static void on_process(void *userdata, struct spa_io_position *position) {
     struct data *data = (struct data *)userdata;
     float *in = pw_filter_get_dsp_buffer(data->in_port, position->clock.duration);
     float *in2 = pw_filter_get_dsp_buffer(data->in_port2, position->clock.duration);
-    float *dummy_in = pw_filter_get_dsp_buffer(data->dummy_in_port, position->clock.duration);
     float *out = pw_filter_get_dsp_buffer(data->out_port, position->clock.duration);
     float *test_out_left = pw_filter_get_dsp_buffer(data->test_out_left, position->clock.duration);
     float *test_out_right = pw_filter_get_dsp_buffer(data->test_out_right, position->clock.duration);
@@ -63,7 +62,6 @@ static void on_process(void *userdata, struct spa_io_position *position) {
             data->sine_phase -= 2 * M_PI;
         float val1 = sinf(data->sine_phase) * 0.5f;
         data->sine_phase += 2.0f * M_PI * 440.0f / 48000.0f; // Increment phase for 440Hz sine at 48kHz
-        float dummy_val = dummy_in ? dummy_in[n] : 0.0f;
 
         // Inject pattern if requested
         if (data->inject_pattern) {
@@ -136,7 +134,7 @@ void *test_thread_func(void *arg) {
     if (data->pid_pipewire == 0) {
         // Child process: exec pwarPipeWire with arguments
         //execl("../_out/pwarPipeWire", "pwarPipeWire", "--ip", "127.0.0.1", "--port", "8322", "--oneshot", (char *)NULL);
-        execl("../_out/pwarPipeWire", "pwarPipeWire", "--ip", "127.0.0.1", "--port", "8322", (char *)NULL);
+        execl("build/pwarPipeWire", "pwarPipeWire", "--ip", "127.0.0.1", "--port", "8322", (char *)NULL);
         perror("execl pwarPipeWire");
         exit(1);
     } else if (data->pid_pipewire < 0) {
@@ -146,7 +144,7 @@ void *test_thread_func(void *arg) {
     data->pid_windows_sim = fork();
     if (data->pid_windows_sim == 0) {
         // Child process: exec windows_sim
-        execl("../_out/windows_sim", "windows_sim", (char *)NULL);
+        execl("build/windows_sim", "windows_sim", (char *)NULL);
         perror("execl windows_sim");
         exit(1);
     } else if (data->pid_windows_sim < 0) {
@@ -177,6 +175,7 @@ void *test_thread_func(void *arg) {
         int rv = select(1, &set, NULL, NULL, &timeout);
         if (rv > 0) {
             int c = getchar();
+            (void)c;
             data->inject_pattern = 1;
             data->pattern_detected_in = 0;
             data->pattern_detected_in2 = 0;
