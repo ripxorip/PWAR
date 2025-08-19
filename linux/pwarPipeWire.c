@@ -26,6 +26,7 @@
 #include "pwar_router.h"
 #include "pwar_rcv_buffer.h"
 
+#define CHUNK_SIZE 64
 #define DEFAULT_STREAM_IP "192.168.66.3"
 #define DEFAULT_STREAM_PORT 8321
 
@@ -341,7 +342,7 @@ int main(int argc, char *argv[]) {
         }
     }
     char latency[32];
-    snprintf(latency, sizeof(latency), "%d/48000", 128);
+    snprintf(latency, sizeof(latency), "%d/48000", CHUNK_SIZE);
     setenv("PIPEWIRE_LATENCY", latency, 1);
     struct data data;
     memset(&data, 0, sizeof(data));
