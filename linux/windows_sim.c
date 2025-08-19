@@ -23,7 +23,7 @@
 #define SIM_PORT 8322
 
 #define CHANNELS 2
-#define BUFFER_SIZE 128
+#define BUFFER_SIZE 64
 
 static int recv_sockfd;
 static pthread_mutex_t packet_mutex = PTHREAD_MUTEX_INITIALIZER;
@@ -113,9 +113,6 @@ int main() {
     pthread_create(&recv_thread, NULL, receiver_thread, NULL);
 
     while (1) {
-        // How to send:
-        //ssize_t sent = sendto(sockfd, &packet, sizeof(packet), 0, (struct sockaddr *)&servaddr, sizeof(servaddr));
-        // sleep 1 second
         sleep(1);
     }
     return 0;

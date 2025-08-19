@@ -64,6 +64,7 @@ struct data {
     int packet_available;
 
     pwar_router_t linux_router;
+    pthread_mutex_t pwar_rcv_mutex; // Mutex for receive buffer
 };
 
 static void setup_recv_socket(struct data *data, int port);
@@ -173,7 +174,9 @@ static void *receiver_thread(void *userdata) {
                 // Ping pong mode
                 int samples_ready = pwar_router_process_packet(&data->linux_router, &packet, linux_output_buffers, MAX_BUFFER_SIZE, NUM_CHANNELS);
                 if (samples_ready > 0) {
+                    pthread_mutex_lock(&data->pwar_rcv_mutex); // Lock before buffer add
                     pwar_rcv_buffer_add_buffer(linux_output_buffers, samples_ready, NUM_CHANNELS);
+                    pthread_mutex_unlock(&data->pwar_rcv_mutex); // Unlock after buffer add
                 }
             }
         }
@@ -261,6 +264,10 @@ static void process_ping_pong(void *userdata, float *in, uint32_t n_samples, flo
     clock_gettime(CLOCK_MONOTONIC, &ts);
     uint64_t timestamp = (uint64_t)ts.tv_sec * 1000000000 + ts.tv_nsec;
     packet.ts_pipewire_send = timestamp;
+
+    /* Lock to prevent the response being received too soon */
+    pthread_mutex_lock(&data->pwar_rcv_mutex); // Lock before get_chunk
+
     if (sendto(data->sockfd, &packet, sizeof(packet), 0, (struct sockaddr *)&data->servaddr, sizeof(data->servaddr)) < 0) {
         perror("sendto failed");
     }
@@ -269,6 +276,8 @@ static void process_ping_pong(void *userdata, float *in, uint32_t n_samples, flo
     memset(linux_rcv_buffers, 0, sizeof(linux_rcv_buffers));
     // Get the chunk from n-1 (ping-pong)
     pwar_rcv_get_chunk(linux_rcv_buffers, NUM_CHANNELS, n_samples);
+
+    pthread_mutex_unlock(&data->pwar_rcv_mutex); // Unlock after get_chunk
 
     if (left_out)
         memcpy(left_out, linux_rcv_buffers, n_samples * sizeof(float));
@@ -354,6 +363,7 @@ int main(int argc, char *argv[]) {
     pthread_mutex_init(&data.packet_mutex, NULL);
     pthread_cond_init(&data.packet_cond, NULL);
     data.packet_available = 0;
+    pthread_mutex_init(&data.pwar_rcv_mutex, NULL); // Init new mutex
     pthread_t recv_thread;
     pthread_create(&recv_thread, NULL, receiver_thread, &data);
     pw_init(&argc, &argv);
