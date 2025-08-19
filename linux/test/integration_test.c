@@ -31,6 +31,8 @@ struct data {
     void *in_port2;
     void *dummy_in_port;
     void *out_port;
+    void *test_out_left;
+    void *test_out_right;
     float sine_phase;
     uint8_t test_mode;
     pid_t pid_pipewire;
@@ -43,6 +45,8 @@ static void on_process(void *userdata, struct spa_io_position *position) {
     float *in2 = pw_filter_get_dsp_buffer(data->in_port2, position->clock.duration);
     float *dummy_in = pw_filter_get_dsp_buffer(data->dummy_in_port, position->clock.duration);
     float *out = pw_filter_get_dsp_buffer(data->out_port, position->clock.duration);
+    float *test_out_left = pw_filter_get_dsp_buffer(data->test_out_left, position->clock.duration);
+    float *test_out_right = pw_filter_get_dsp_buffer(data->test_out_right, position->clock.duration);
 
     uint32_t n_samples = position->clock.duration;
     for (uint32_t n = 0; n < n_samples; n++) {
@@ -52,6 +56,12 @@ static void on_process(void *userdata, struct spa_io_position *position) {
         float dummy_val = dummy_in ? dummy_in[n] : 0.0f;
         if (out)
             out[n] = val1; // Output only the sine
+        if (test_out_left && in) {
+            test_out_left[n] = in[n];
+        }
+        if (test_out_right && in2) {
+            test_out_right[n] = in2[n];
+        }
     }
 }
 
@@ -127,6 +137,9 @@ void *test_thread_func(void *arg) {
     ret = system("pw-link pwar:output-right integration_test:input-right");
     ret = system("pw-link pwar:output-left integration_test:input-left");
 
+    ret = system("pw-link integration_test:test-out-left alsa_output.pci-0000_00_1f.3.analog-stereo:playback_FL");
+    ret = system("pw-link integration_test:test-out-right alsa_output.pci-0000_00_1f.3.analog-stereo:playback_FR");
+
     while (1) {
         sleep(1); // Keep the thread alive
     }
@@ -192,6 +205,24 @@ int main(int argc, char *argv[]) {
         pw_properties_new(
             PW_KEY_FORMAT_DSP, "32 bit float mono audio",
             PW_KEY_PORT_NAME, "output",
+            NULL),
+        NULL, 0);
+    data.test_out_left = pw_filter_add_port(data.filter,
+        PW_DIRECTION_OUTPUT,
+        PW_FILTER_PORT_FLAG_MAP_BUFFERS,
+        sizeof(struct port),
+        pw_properties_new(
+            PW_KEY_FORMAT_DSP, "32 bit float mono audio",
+            PW_KEY_PORT_NAME, "test-out-left",
+            NULL),
+        NULL, 0);
+    data.test_out_right = pw_filter_add_port(data.filter,
+        PW_DIRECTION_OUTPUT,
+        PW_FILTER_PORT_FLAG_MAP_BUFFERS,
+        sizeof(struct port),
+        pw_properties_new(
+            PW_KEY_FORMAT_DSP, "32 bit float mono audio",
+            PW_KEY_PORT_NAME, "test-out-right",
             NULL),
         NULL, 0);
 
