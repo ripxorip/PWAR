@@ -86,7 +86,7 @@
    meson setup build
    ninja -C build
    ```
-3. The binaries will be in `linux/build/` (e.g., `pwarPipeWire`, `pwar_torture`, `windows_sim`).
+3. The binaries will be in `linux/build/` (e.g., `pwar`, `pwar_torture`, `windows_sim`).
 
 #### 🧪 Protocol Unit Tests
 To build protocol unit tests:
