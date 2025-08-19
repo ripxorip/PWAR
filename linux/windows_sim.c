@@ -68,7 +68,9 @@ static void *receiver_thread(void *userdata) {
             packet_available = 1;
             //printf("Received packet seq: %lu, n_samples: %u\n", packet.seq, packet.n_samples);
             float output_buffers[CHANNELS * BUFFER_SIZE] = {0};
-            packet.num_packets = BUFFER_SIZE / PWAR_PACKET_CHUNK_SIZE;
+            uint32_t chunk_size = packet.n_samples;
+            packet.num_packets = BUFFER_SIZE / chunk_size;
+            printf("Processing packet seq: %lu, n_samples: %u, num_packets: %u\n", packet.seq, packet.n_samples, packet.num_packets);
             int samples_ready = pwar_router_process_streaming_packet(&router, &packet, output_buffers, BUFFER_SIZE, CHANNELS);
             if (samples_ready > 0) {
                 uint32_t seq = packet.seq;
@@ -78,7 +80,7 @@ static void *receiver_thread(void *userdata) {
                 // But first copy channel 0 to channel 1 for testing
                 for (uint32_t i = 0; i < samples_ready; ++i)
                     output_buffers[BUFFER_SIZE + i] = output_buffers[i];
-                pwar_router_send_buffer(&router, output_buffers, samples_ready, CHANNELS, output_packets, 32, &packets_to_send);
+                pwar_router_send_buffer(&router, chunk_size, output_buffers, samples_ready, CHANNELS, output_packets, 32, &packets_to_send);
 
                 // Set seq for all packets in this buffer
                 for (uint32_t i = 0; i < packets_to_send; ++i) {

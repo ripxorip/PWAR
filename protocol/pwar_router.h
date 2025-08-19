@@ -21,7 +21,7 @@ typedef struct {
 
     // State for packet assembly
     uint32_t received_packets;
-    uint8_t packet_received[PWAR_ROUTER_MAX_BUFFER_SIZE / PWAR_PACKET_CHUNK_SIZE];
+    uint8_t packet_received[PWAR_ROUTER_MAX_BUFFER_SIZE / PWAR_PACKET_MIN_CHUNK_SIZE];
     uint64_t current_seq; // Track current buffer sequence number
 } pwar_router_t;
 
@@ -40,6 +40,6 @@ int pwar_router_process_streaming_packet(pwar_router_t *router, pwar_packet_t *i
 // packets: output array for generated packets
 // packet_count: size of the packets array
 // packets_to_send: output, set to the number of packets generated from the input samples
-int pwar_router_send_buffer(pwar_router_t *router, float *samples, uint32_t n_samples, uint32_t channel_count, pwar_packet_t *packets, const uint32_t packet_count, uint32_t *packets_to_send);
+int pwar_router_send_buffer(pwar_router_t *router, uint32_t chunk_size, float *samples, uint32_t n_samples, uint32_t channel_count, pwar_packet_t *packets, const uint32_t packet_count, uint32_t *packets_to_send);
 
 #endif /* PWAR_ROUTER */

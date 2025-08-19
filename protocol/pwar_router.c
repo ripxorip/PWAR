@@ -12,7 +12,9 @@
 void pwar_router_init(pwar_router_t *router, uint32_t channel_count) {
     router->channel_count = channel_count;
     router->received_packets = 0;
-    for (uint32_t i = 0; i < PWAR_ROUTER_MAX_BUFFER_SIZE / PWAR_PACKET_CHUNK_SIZE; ++i) router->packet_received[i] = 0;
+    // Use the correct size for packet_received array
+    const uint32_t max_packets = sizeof(router->packet_received) / sizeof(router->packet_received[0]);
+    for (uint32_t i = 0; i < max_packets; ++i) router->packet_received[i] = 0;
     router->current_seq = (uint64_t)(-1); // Initialize to invalid seq
 }
 
@@ -28,16 +30,17 @@ int pwar_router_process_streaming_packet(pwar_router_t *router, pwar_packet_t *i
 int pwar_router_process_packet(pwar_router_t *router, pwar_packet_t *input_packet, float *output_buffers, uint32_t max_samples, uint32_t channel_count) {
     if (!input_packet || !output_buffers) return -1;
     if (input_packet->num_packets == 0 || input_packet->packet_index >= input_packet->num_packets) return -2;
-    if (input_packet->n_samples > PWAR_PACKET_CHUNK_SIZE) return -3;
+    if (input_packet->n_samples > PWAR_PACKET_MAX_CHUNK_SIZE) return -3;
     // Reset state if new buffer sequence detected
     if (input_packet->seq != router->current_seq) {
         router->current_seq = input_packet->seq;
         router->received_packets = 0;
-        for (uint32_t i = 0; i < PWAR_ROUTER_MAX_BUFFER_SIZE / PWAR_PACKET_CHUNK_SIZE; ++i) router->packet_received[i] = 0;
+        const uint32_t max_packets = sizeof(router->packet_received) / sizeof(router->packet_received[0]);
+        for (uint32_t i = 0; i < max_packets; ++i) router->packet_received[i] = 0;
     }
     if (!router->packet_received[input_packet->packet_index]) {
         // Copy samples to internal buffer
-        uint32_t offset = input_packet->packet_index * PWAR_PACKET_CHUNK_SIZE;
+        uint32_t offset = input_packet->packet_index * input_packet->n_samples;
         for (uint32_t ch = 0; ch < router->channel_count && ch < PWAR_CHANNELS; ++ch) {
             for (uint32_t s = 0; s < input_packet->n_samples; ++s) {
                 router->buffers[ch][offset + s] = input_packet->samples[ch][s];
@@ -49,7 +52,7 @@ int pwar_router_process_packet(pwar_router_t *router, pwar_packet_t *input_packe
     // Check if all packets for this buffer are received
     if (router->received_packets == input_packet->num_packets) {
         // Calculate total number of samples from packet info
-        uint32_t total_samples = (input_packet->num_packets - 1) * PWAR_PACKET_CHUNK_SIZE + input_packet->n_samples;
+        uint32_t total_samples = (input_packet->num_packets - 1) * input_packet->n_samples + input_packet->n_samples;
         uint32_t n_samples = total_samples < max_samples ? total_samples : max_samples;
         for (uint32_t ch = 0; ch < channel_count && ch < router->channel_count; ++ch) {
             memcpy(&output_buffers[ch * n_samples], router->buffers[ch], n_samples * sizeof(float));
@@ -60,10 +63,10 @@ int pwar_router_process_packet(pwar_router_t *router, pwar_packet_t *input_packe
 }
 
 // Returns 0 on success, -1 if not enough space in packets array, -2 if invalid arguments
-int pwar_router_send_buffer(pwar_router_t *router, float *samples, uint32_t n_samples, uint32_t channel_count, pwar_packet_t *packets, const uint32_t packet_count, uint32_t *packets_to_send) {
+int pwar_router_send_buffer(pwar_router_t *router, uint32_t chunk_size, float *samples, uint32_t n_samples, uint32_t channel_count, pwar_packet_t *packets, const uint32_t packet_count, uint32_t *packets_to_send) {
     (void)router; // Unused in this implementation, but could be used for future enhancements
     if (!samples || !packets || !packets_to_send || channel_count == 0 || n_samples == 0) return -2;
-    uint32_t chunk_size = PWAR_PACKET_CHUNK_SIZE;
+    printf("Sending %u samples in %u channels, chunk size: %u\n", n_samples, channel_count, chunk_size);
     uint32_t total_packets = (n_samples + chunk_size - 1) / chunk_size;
     if (total_packets > packet_count) {
         *packets_to_send = 0;

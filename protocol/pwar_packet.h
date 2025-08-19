@@ -10,7 +10,8 @@
 
 #include <stdint.h>
 
-#define PWAR_PACKET_CHUNK_SIZE 128
+#define PWAR_PACKET_MAX_CHUNK_SIZE 128
+#define PWAR_PACKET_MIN_CHUNK_SIZE 64
 #define PWAR_CHANNELS 2
 
 /*
@@ -24,7 +25,7 @@
  */
 
 typedef struct {
-    uint16_t n_samples;
+    uint16_t n_samples; // I.e. the current chunk size, must be <= PWAR_PACKET_MAX_CHUNK_SIZE
     uint64_t seq;
 
     /* For segmentation */
@@ -34,7 +35,7 @@ typedef struct {
     uint64_t ts_pipewire_send;      // when PipeWire sends input
     uint64_t ts_asio_send;          // when DAW finishes processing and returns
 
-    float samples[PWAR_CHANNELS][PWAR_PACKET_CHUNK_SIZE]; // interleaved samples
+    float samples[PWAR_CHANNELS][PWAR_PACKET_MAX_CHUNK_SIZE]; // interleaved samples
 } pwar_packet_t;
 
 #endif /* PWAR_PACKET */

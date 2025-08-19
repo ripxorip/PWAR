@@ -30,9 +30,7 @@
 #define DEFAULT_STREAM_PORT 8321
 
 #define MAX_BUFFER_SIZE 4096
-
 #define NUM_CHANNELS 2
-#define CHUNK_SIZE 128
 
 // TODO: Make CHUNK_SIZE 64 (fixed) even if the PipeWire buffer size is 128, it can be done by sending every packet immediately.
 // Also make oneshot a flag instead. Make it possible for windows to request a buffer size, and dont be sentimental about the tests...
@@ -268,14 +266,15 @@ static void process_ping_pong(void *userdata, float *in, uint32_t n_samples, flo
         perror("sendto failed");
     }
 
-    float linux_rcv_buffers[NUM_CHANNELS * CHUNK_SIZE] = {0};
+    float linux_rcv_buffers[NUM_CHANNELS * n_samples];
+    memset(linux_rcv_buffers, 0, sizeof(linux_rcv_buffers));
     // Get the chunk from n-1 (ping-pong)
-    pwar_rcv_get_chunk(linux_rcv_buffers, NUM_CHANNELS, CHUNK_SIZE);
+    pwar_rcv_get_chunk(linux_rcv_buffers, NUM_CHANNELS, n_samples);
 
     if (left_out)
-        memcpy(left_out, linux_rcv_buffers, CHUNK_SIZE * sizeof(float));
+        memcpy(left_out, linux_rcv_buffers, n_samples * sizeof(float));
     if (right_out)
-        memcpy(right_out, linux_rcv_buffers + CHUNK_SIZE, CHUNK_SIZE * sizeof(float));
+        memcpy(right_out, linux_rcv_buffers + n_samples, n_samples * sizeof(float));
 }
 
 static void on_process(void *userdata, struct spa_io_position *position) {

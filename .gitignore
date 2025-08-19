@@ -4,3 +4,5 @@ third_party/asiosdk
 linux/_out
 protocol/test/_out/
 .vscode/
+.direnv/
+.envrc
