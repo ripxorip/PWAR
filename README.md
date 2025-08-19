@@ -26,15 +26,16 @@
    udp_send_ip=192.168.66.2
    ```
    Replace with your Linux server's IP.
-5. 🐧 **Build the Linux binary:**
+5. 🐧 **Build the Linux binaries:**
    ```sh
    nix develop
-   make
+   meson setup build
+   ninja -C build
    ```
-   The binary will be at `linux/_out/pwarPipeWire`.
+   The binaries will be in `linux/build/`.
 6. 🔗 **Run the Linux relay:**
    ```sh
-   ./linux/pwarPipeWire --ip 192.168.66.3
+   ./linux/build/pwarPipeWire --ip 192.168.66.3
    ```
    Replace `192.168.66.3` with the Windows ASIO host's IP.
 
@@ -77,14 +78,24 @@
    ```
 5. The ASIO driver DLL will be in `build/windows/asio/PWARASIO.dll`.
 
-### 🐧 Linux (Nix + Makefile)
+### 🐧 Linux (Nix + Meson)
 1. Install [Nix](https://nixos.org/download.html).
-2. Build using the provided flake in the linux directory:
+2. Build using the provided flake and Meson build system:
    ```sh
    nix develop
-   make
+   meson setup build
+   ninja -C build
    ```
-3. The binary will be in `linux/_out/pwarPipeWire`.
+3. The binaries will be in `linux/build/` (e.g., `pwarPipeWire`, `pwar_torture`, `windows_sim`).
+
+#### 🧪 Protocol Unit Tests
+To build protocol unit tests:
+```sh
+cd protocol/test
+meson setup build
+ninja -C build
+```
+Test binaries will be in `protocol/test/build/`.
 
 ---
 
@@ -113,7 +124,7 @@ Replace with your actual Linux server's IP.
 
 On your Linux machine, run:
 ```sh
-./linux/pwarPipeWire --ip 192.168.66.3
+./linux/build/pwarPipeWire --ip 192.168.66.3
 ```
 Replace `192.168.66.3` with the IP address of the Windows ASIO host to stream to.
 
