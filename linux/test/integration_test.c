@@ -135,6 +135,7 @@ void *test_thread_func(void *arg) {
     data->pid_pipewire = fork();
     if (data->pid_pipewire == 0) {
         // Child process: exec pwarPipeWire with arguments
+        //execl("../_out/pwarPipeWire", "pwarPipeWire", "--ip", "127.0.0.1", "--port", "8322", "--oneshot", (char *)NULL);
         execl("../_out/pwarPipeWire", "pwarPipeWire", "--ip", "127.0.0.1", "--port", "8322", (char *)NULL);
         perror("execl pwarPipeWire");
         exit(1);

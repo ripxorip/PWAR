@@ -66,11 +66,9 @@ static void *receiver_thread(void *userdata) {
             pthread_mutex_lock(&packet_mutex);
             latest_packet = packet;
             packet_available = 1;
-            //printf("Received packet seq: %lu, n_samples: %u\n", packet.seq, packet.n_samples);
             float output_buffers[CHANNELS * BUFFER_SIZE] = {0};
             uint32_t chunk_size = packet.n_samples;
             packet.num_packets = BUFFER_SIZE / chunk_size;
-            //printf("Processing packet seq: %lu, n_samples: %u, num_packets: %u\n", packet.seq, packet.n_samples, packet.num_packets);
             int samples_ready = pwar_router_process_streaming_packet(&router, &packet, output_buffers, BUFFER_SIZE, CHANNELS);
             if (samples_ready > 0) {
                 uint32_t seq = packet.seq;
