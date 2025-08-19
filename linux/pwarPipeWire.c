@@ -26,16 +26,11 @@
 #include "pwar_router.h"
 #include "pwar_rcv_buffer.h"
 
-#define CHUNK_SIZE 64
 #define DEFAULT_STREAM_IP "192.168.66.3"
 #define DEFAULT_STREAM_PORT 8321
 
 #define MAX_BUFFER_SIZE 4096
 #define NUM_CHANNELS 2
-
-// TODO: Make CHUNK_SIZE 64 (fixed) even if the PipeWire buffer size is 128, it can be done by sending every packet immediately.
-// Also make oneshot a flag instead. Make it possible for windows to request a buffer size, and dont be sentimental about the tests...
-// it has proven better to run with simulation instead and real audio.
 
 struct data;
 
@@ -50,7 +45,6 @@ struct data {
     struct port *left_out_port;
     struct port *right_out_port;
     float sine_phase;
-    uint8_t test_mode;
     uint8_t passthrough_test; // Add passthrough_test flag
     uint8_t oneshot_mode; // Add oneshot_mode flag
     uint32_t seq;
@@ -299,14 +293,6 @@ static void on_process(void *userdata, struct spa_io_position *position) {
             memcpy(right_out, in, n_samples * sizeof(float));
         return;
     }
-    if (data->test_mode) {
-        for (uint32_t n = 0; n < n_samples; n++) {
-            if (data->sine_phase >= 2 * M_PI)
-                data->sine_phase -= 2 * M_PI;
-            in[n] = sinf(data->sine_phase) * 0.5f;
-            data->sine_phase += 2 * M_PI * 440 / 48000;
-        }
-    }
 
     if (data->oneshot_mode) {
         // Use one-shot processing, i.e. Linux send, Windows process, Linux receive in one go
@@ -331,26 +317,28 @@ static void do_quit(void *userdata, int signal_number) {
 int main(int argc, char *argv[]) {
     char stream_ip[64] = DEFAULT_STREAM_IP;
     int stream_port = DEFAULT_STREAM_PORT;
-    int test_mode = 0;
     int passthrough_test = 0;
     int oneshot_mode = 0;
+    int buffer_size = 64; // Default value previously CHUNK_SIZE
     for (int i = 1; i < argc; ++i) {
         if ((strcmp(argv[i], "--ip") == 0 || strcmp(argv[i], "-i") == 0) && i + 1 < argc) {
             strncpy(stream_ip, argv[++i], sizeof(stream_ip) - 1);
             stream_ip[sizeof(stream_ip) - 1] = '\0';
-        } else if ((strcmp(argv[i], "--port") == 0 || strcmp(argv[i], "-p") == 0) && i + 1 < argc) {
+        } else if ((strcmp(argv[i], "--port") == 0 || (strcmp(argv[i], "-p") == 0)) && i + 1 < argc) {
             stream_port = atoi(argv[++i]);
-        } else if ((strcmp(argv[i], "--test") == 0) || (strcmp(argv[i], "-t") == 0)) {
-            test_mode = 1;
         } else if ((strcmp(argv[i], "--passthrough_test") == 0) || (strcmp(argv[i], "-pt") == 0)) {
             passthrough_test = 1;
         } else if ((strcmp(argv[i], "--oneshot") == 0)) {
             oneshot_mode = 1;
+        } else if ((strcmp(argv[i], "--buffer_size") == 0 || strcmp(argv[i], "-b") == 0) && i + 1 < argc) {
+            buffer_size = atoi(argv[++i]);
         }
     }
+
     char latency[32];
-    snprintf(latency, sizeof(latency), "%d/48000", CHUNK_SIZE);
+    snprintf(latency, sizeof(latency), "%d/48000", buffer_size);
     setenv("PIPEWIRE_LATENCY", latency, 1);
+
     struct data data;
     memset(&data, 0, sizeof(data));
     const struct spa_pod *params[1];
@@ -370,7 +358,6 @@ int main(int argc, char *argv[]) {
     data.loop = pw_main_loop_new(NULL);
     pw_loop_add_signal(pw_main_loop_get_loop(data.loop), SIGINT, do_quit, &data);
     pw_loop_add_signal(pw_main_loop_get_loop(data.loop), SIGTERM, do_quit, &data);
-    data.test_mode = test_mode;
     data.passthrough_test = passthrough_test;
     data.oneshot_mode = oneshot_mode;
     data.sine_phase = 0.0f;

@@ -23,7 +23,7 @@
 #define SIM_PORT 8322
 
 #define CHANNELS 2
-#define BUFFER_SIZE 64
+#define BUFFER_SIZE 512
 
 static int recv_sockfd;
 static pthread_mutex_t packet_mutex = PTHREAD_MUTEX_INITIALIZER;
