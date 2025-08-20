@@ -1,5 +1,6 @@
-project('PWAR', 'c', version: '1.0', default_options: ['buildtype=release'])
+project('PWAR', ['c', 'cpp'], version: '1.0', default_options: ['buildtype=release'])
 
+cpp = meson.get_compiler('cpp')
 cc = meson.get_compiler('c')
 pwar_inc = include_directories('../protocol')
 
@@ -29,3 +30,16 @@ executable(
   dependencies: [pipewire_dep, math_dep],
   install: true,
 )
+
+qt5_dep = dependency('qt5', modules: ['Core', 'Widgets', 'Quick'], required: true)
+
+executable(
+  'pwar_gui',
+  ['pwar_gui.cpp'],
+  link_with: libpwar,
+  dependencies: [qt5_dep, pipewire_dep, math_dep],
+  install: true,
+)
+
+# Optionally install QML file
+install_data('pwar_gui.qml')

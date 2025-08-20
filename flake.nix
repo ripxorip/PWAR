@@ -37,6 +37,7 @@
           check
           pkg-config
           pipewire.dev
+          qt5.full
         ];
       };
       packages.default = pwarPkg;
