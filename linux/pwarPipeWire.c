@@ -21,8 +21,10 @@
 #include <spa/param/latency-utils.h>
 #include <pipewire/pipewire.h>
 #include <pipewire/filter.h>
-#include "pwar_packet.h"
 
+#include "latency_manager.h"
+
+#include "pwar_packet.h"
 #include "pwar_router.h"
 #include "pwar_rcv_buffer.h"
 
@@ -100,79 +102,32 @@ static void *receiver_thread(void *userdata) {
     }
 
     struct data *data = (struct data *)userdata;
-    pwar_packet_t packet;
-    // Latency stats
-    static double min_total = 1e9, max_total = 0, sum_total = 0;
-    static double min_daw = 1e9, max_daw = 0, sum_daw = 0;
-    static double min_net = 1e9, max_net = 0, sum_net = 0;
-    static uint64_t last_print_ns = 0;
-    static int count = 0;
-    struct timespec ts;
-    clock_gettime(CLOCK_MONOTONIC, &ts);
-    last_print_ns = (uint64_t)ts.tv_sec * 1000000000 + ts.tv_nsec;
-
+    char recv_buffer[sizeof(pwar_packet_t) > sizeof(pwar_latency_info_t) ? sizeof(pwar_packet_t) : sizeof(pwar_latency_info_t)];
     float linux_output_buffers[NUM_CHANNELS * MAX_BUFFER_SIZE] = {0};
 
     while (1) {
-        ssize_t n = recvfrom(data->recv_sockfd, &packet, sizeof(packet), 0, NULL, NULL);
-        if (n == (ssize_t)sizeof(packet)) {
+        ssize_t n = recvfrom(data->recv_sockfd, recv_buffer, sizeof(recv_buffer), 0, NULL, NULL);
+        if (n == (ssize_t)sizeof(pwar_packet_t)) {
+            pwar_packet_t *packet = (pwar_packet_t *)recv_buffer;
+            latency_manager_process_packet_server(packet);
             if (data->oneshot_mode) {
-                // Oneshot mode
                 pthread_mutex_lock(&data->packet_mutex);
-                data->latest_packet = packet;
+                data->latest_packet = *packet;
                 data->packet_available = 1;
                 pthread_cond_signal(&data->packet_cond);
                 pthread_mutex_unlock(&data->packet_mutex);
-
-                clock_gettime(CLOCK_MONOTONIC, &ts);
-                uint64_t ts_return = (uint64_t)ts.tv_sec * 1000000000 + ts.tv_nsec;
-                uint64_t total_latency = ts_return - packet.ts_pipewire_send;
-                uint64_t daw_latency = packet.ts_asio_send - packet.ts_pipewire_send;
-                uint64_t network_latency = total_latency - daw_latency;
-                double total_latency_ms = total_latency / 1000000.0;
-                double daw_latency_ms = daw_latency / 1000000.0;
-                double network_latency_ms = network_latency / 1000000.0;
-
-                // Update stats
-                if (total_latency_ms < min_total) min_total = total_latency_ms;
-                if (total_latency_ms > max_total) max_total = total_latency_ms;
-                sum_total += total_latency_ms;
-
-                if (daw_latency_ms < min_daw) min_daw = daw_latency_ms;
-                if (daw_latency_ms > max_daw) max_daw = daw_latency_ms;
-                sum_daw += daw_latency_ms;
-
-                if (network_latency_ms < min_net) min_net = network_latency_ms;
-                if (network_latency_ms > max_net) max_net = network_latency_ms;
-                sum_net += network_latency_ms;
-
-                count++;
-
-                // Print every 2 seconds
-                uint64_t now_ns = ts_return;
-                if (now_ns - last_print_ns >= 2 * 1000000000ULL) {
-                    double avg_total = count ? sum_total / count : 0;
-                    double avg_daw = count ? sum_daw / count : 0;
-                    double avg_net = count ? sum_net / count : 0;
-                    printf("[2s] Packets: %d | Total Latency: min %.2f ms, max %.2f ms, avg %.2f ms | DAW: min %.2f ms, max %.2f ms, avg %.2f ms | Net: min %.2f ms, max %.2f ms, avg %.2f ms\n",
-                        count, min_total, max_total, avg_total, min_daw, max_daw, avg_daw, min_net, max_net, avg_net);
-                    // Reset stats
-                    min_total = min_daw = min_net = 1e9;
-                    max_total = max_daw = max_net = 0;
-                    sum_total = sum_daw = sum_net = 0;
-                    count = 0;
-                    last_print_ns = now_ns;
-                }
-            }
+            } 
             else {
-                // Ping pong mode
-                int samples_ready = pwar_router_process_packet(&data->linux_router, &packet, linux_output_buffers, MAX_BUFFER_SIZE, NUM_CHANNELS);
+                int samples_ready = pwar_router_process_packet(&data->linux_router, packet, linux_output_buffers, MAX_BUFFER_SIZE, NUM_CHANNELS);
                 if (samples_ready > 0) {
                     pthread_mutex_lock(&data->pwar_rcv_mutex); // Lock before buffer add
                     pwar_rcv_buffer_add_buffer(linux_output_buffers, samples_ready, NUM_CHANNELS);
                     pthread_mutex_unlock(&data->pwar_rcv_mutex); // Unlock after buffer add
                 }
             }
+        } else if (n == (ssize_t)sizeof(pwar_latency_info_t)) {
+            pwar_latency_info_t *latency_info = (pwar_latency_info_t *)recv_buffer;
+            latency_manager_handle_latency_info(latency_info);
         }
     }
     return NULL;
@@ -197,10 +152,8 @@ static void stream_buffer(float *samples, uint32_t n_samples, void *userdata) {
     packet.n_samples = n_samples;
     // Just stream the first channel for now.. FIXME: This should be updated to handle multiple channels properly in the future
     memcpy(packet.samples[0], samples, n_samples * sizeof(float));
-    struct timespec ts;
-    clock_gettime(CLOCK_MONOTONIC, &ts);
-    uint64_t timestamp = (uint64_t)ts.tv_sec * 1000000000 + ts.tv_nsec;
-    packet.ts_pipewire_send = timestamp;
+
+    packet.timestamp = latency_manager_timestamp_now();
     if (sendto(data->sockfd, &packet, sizeof(packet), 0, (struct sockaddr *)&data->servaddr, sizeof(data->servaddr)) < 0) {
         perror("sendto failed");
     }
@@ -254,10 +207,7 @@ static void process_ping_pong(void *userdata, float *in, uint32_t n_samples, flo
     // Just stream the first channel for now.. FIXME: This should be updated to handle multiple channels properly in the future
     memcpy(packet.samples[0], in, n_samples * sizeof(float));
 
-    struct timespec ts;
-    clock_gettime(CLOCK_MONOTONIC, &ts);
-    uint64_t timestamp = (uint64_t)ts.tv_sec * 1000000000 + ts.tv_nsec;
-    packet.ts_pipewire_send = timestamp;
+    packet.timestamp = latency_manager_timestamp_now();
 
     /* Lock to prevent the response being received too soon */
     pthread_mutex_lock(&data->pwar_rcv_mutex); // Lock before get_chunk

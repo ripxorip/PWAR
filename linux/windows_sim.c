@@ -18,6 +18,8 @@
 #include "../protocol/pwar_packet.h"
 #include "../protocol/pwar_router.h"
 
+#include "latency_manager.h"
+
 #define DEFAULT_STREAM_IP "127.0.0.1"
 #define DEFAULT_STREAM_PORT 8321
 #define SIM_PORT 8322
@@ -69,26 +71,39 @@ static void *receiver_thread(void *userdata) {
             float output_buffers[CHANNELS * BUFFER_SIZE] = {0};
             uint32_t chunk_size = packet.n_samples;
             packet.num_packets = BUFFER_SIZE / chunk_size;
+            latency_manager_process_packet_client(&packet);
             int samples_ready = pwar_router_process_streaming_packet(&router, &packet, output_buffers, BUFFER_SIZE, CHANNELS);
             if (samples_ready > 0) {
                 uint32_t seq = packet.seq;
-                // Process the output buffers as needed
 
+                latency_manager_start_audio_cbk_begin();
+                // Process the output buffers as needed
                 // Loop back.
                 // But first copy channel 0 to channel 1 for testing
                 for (uint32_t i = 0; i < samples_ready; ++i)
                     output_buffers[BUFFER_SIZE + i] = output_buffers[i];
+                latency_manager_start_audio_cbk_end();
+
                 pwar_router_send_buffer(&router, chunk_size, output_buffers, samples_ready, CHANNELS, output_packets, 32, &packets_to_send);
 
+                uint64_t timestamp = latency_manager_timestamp_now();
                 // Set seq for all packets in this buffer
                 for (uint32_t i = 0; i < packets_to_send; ++i) {
                     output_packets[i].seq = seq;
+                    output_packets[i].timestamp = timestamp;
                 }
                 for (uint32_t i = 0; i < packets_to_send; ++i) {
                     ssize_t sent = sendto(sockfd, &output_packets[i], sizeof(output_packets[i]), 0, (struct sockaddr *)&servaddr, sizeof(servaddr));
                     if (sent < 0) {
                         perror("sendto failed");
                     }
+                }
+            }
+            pwar_latency_info_t latency_info;
+            if (latency_manager_time_for_sending_latency_info(&latency_info)) {
+                ssize_t sent = sendto(sockfd, &latency_info, sizeof(latency_info), 0, (struct sockaddr *)&servaddr, sizeof(servaddr));
+                if (sent < 0) {
+                    perror("sendto latency info failed");
                 }
             }
             pthread_cond_signal(&packet_cond);
