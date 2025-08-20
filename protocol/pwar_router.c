@@ -35,6 +35,7 @@ int pwar_router_process_packet(pwar_router_t *router, pwar_packet_t *input_packe
     if (input_packet->seq != router->current_seq) {
         router->current_seq = input_packet->seq;
         router->received_packets = 0;
+        router->seq_timestamp = input_packet->seq_timestamp; // Update the sequence timestamp
         const uint32_t max_packets = sizeof(router->packet_received) / sizeof(router->packet_received[0]);
         for (uint32_t i = 0; i < max_packets; ++i) router->packet_received[i] = 0;
     }
@@ -77,6 +78,7 @@ int pwar_router_send_buffer(pwar_router_t *router, uint32_t chunk_size, float *s
         packets[p].packet_index = p;
         packets[p].num_packets = total_packets;
         packets[p].n_samples = ns;
+        packets[p].seq_timestamp = router->seq_timestamp;
         for (uint32_t ch = 0; ch < channel_count; ++ch) {
             memcpy(packets[p].samples[ch], &samples[ch * n_samples + start], ns * sizeof(float));
         }

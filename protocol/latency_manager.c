@@ -32,6 +32,7 @@ static struct {
     // ----
     latency_stat_t audio_proc; // Statistics for audio processing
     latency_stat_t network_jitter; // Statistics for network jitter
+    latency_stat_t round_trip_time; // Statistics for round trip time
 
 } internal = {0};
 
@@ -58,57 +59,39 @@ void latency_manager_start_audio_cbk_end() {
 }
 
 void latency_manager_process_packet_client(pwar_packet_t *packet) {
-    //uint64_t seq = packet->seq; // Sequence number of the packet
-
-    // From Windows (num_packets will always be 1 in this case)
-    uint64_t packet_ts = packet->timestamp; // Timestamp from the packet when it was sent
-
+    uint64_t packet_ts = packet->timestamp;
     uint64_t nowNs = latency_manager_timestamp_now();
 
-    // Timestamps from the local system
     uint64_t time_since_last_local_packet = nowNs - internal.last_local_packet_timestamp;
     internal.last_local_packet_timestamp = nowNs;
 
-    // Timestamps from pipewire (i.e. between each chunk)
     uint64_t audio_ckb_interval = packet_ts - internal.last_remote_packet_timestamp;
     internal.last_remote_packet_timestamp = packet_ts;
 
-    // With low jitter they should be similar, but with high jitter they can differ significantly
-    uint64_t jitter = time_since_last_local_packet - audio_ckb_interval;
-    printf("Audio callback interval: %llu ns\n", audio_ckb_interval);
-    printf("Time since last local packet: %llu ns\n", time_since_last_local_packet);
-    internal.network_jitter.total += jitter;
+    // Jitter can be negative, log signed value
+    int64_t jitter = (int64_t)time_since_last_local_packet - (int64_t)audio_ckb_interval;
+    uint64_t abs_jitter = (jitter < 0) ? -jitter : jitter;
+    internal.network_jitter.total += abs_jitter;
     internal.network_jitter.count++;
-    if (jitter < internal.network_jitter.min || internal.network_jitter.count == 1) {
-        internal.network_jitter.min = jitter;
+    if (abs_jitter < internal.network_jitter.min || internal.network_jitter.count == 1) {
+        internal.network_jitter.min = abs_jitter;
     }
-    if (jitter > internal.network_jitter.max || internal.network_jitter.count == 1) {
-        internal.network_jitter.max = jitter;
+    if (abs_jitter > internal.network_jitter.max || internal.network_jitter.count == 1) {
+        internal.network_jitter.max = abs_jitter;
     }
 }
 
 void latency_manager_process_packet_server(pwar_packet_t *packet) {
-    // From Linux (num_packets can be larger than 1 due to windows buffering)
-    uint64_t packet_ts = packet->timestamp; // Timestamp from the packet when it was sent
-    uint64_t seq = packet->seq; // Sequence number of the packet
-
-    uint64_t nowNs = latency_manager_timestamp_now();
-
-    // Timestamps from the local system
-    uint64_t time_since_last_local_packet = nowNs - internal.last_local_packet_timestamp;
-    internal.last_local_packet_timestamp = nowNs;
-
-    // Timestamps from Windows
-    uint64_t time_since_last_remote_packet = packet_ts - internal.last_remote_packet_timestamp;
-    internal.last_remote_packet_timestamp = packet_ts;
-
-
-    if (seq != internal.current_seq) {
-        // New sequence detected, reset state
-        internal.current_seq = seq;
-    }
-    else {
-        // Same sequence, this is from a burst of packets
+    if (packet->packet_index == packet->num_packets - 1) {
+        uint64_t round_trip_time = latency_manager_timestamp_now() - packet->seq_timestamp;
+        internal.round_trip_time.total += round_trip_time;
+        internal.round_trip_time.count++;
+        if (round_trip_time < internal.round_trip_time.min || internal.round_trip_time.count == 1) {
+            internal.round_trip_time.min = round_trip_time;
+        }
+        if (round_trip_time > internal.round_trip_time.max || internal.round_trip_time.count == 1) {
+            internal.round_trip_time.max = round_trip_time;
+        }
     }
 }
 
@@ -150,16 +133,23 @@ int latency_manager_time_for_sending_latency_info(pwar_latency_info_t *latency_i
 }
 
 void latency_manager_handle_latency_info(pwar_latency_info_t *latency_info) {
-    // Print all stats as ms
-    printf("Audio Processing: Min: %.3f ms, Max: %.3f ms, Avg: %.3f ms\n",
-           latency_info->audio_proc_min / 1000000.0,
-           latency_info->audio_proc_max / 1000000.0,
-           latency_info->audio_proc_avg / 1000000.0);
-    printf("Network Jitter: Min: %.3f ms, Max: %.3f ms, Avg: %.3f ms\n",
-           latency_info->jitter_min / 1000000.0,
-           latency_info->jitter_max / 1000000.0,
-           latency_info->jitter_avg / 1000000.0);
-    printf("-- Latency info handled --\n");
+    // Print all stats as ms in one streamlined line
+    internal.round_trip_time.avg = (internal.round_trip_time.count > 0) ? (internal.round_trip_time.total / internal.round_trip_time.count) : 0;
+    printf("[PWAR]: AudioProc: min=%.3fms max=%.3fms avg=%.3fms | Jitter: min=%.3fms max=%.3fms avg=%.3fms | RTT: min=%.3fms max=%.3fms avg=%.3fms\n",
+        latency_info->audio_proc_min / 1000000.0,
+        latency_info->audio_proc_max / 1000000.0,
+        latency_info->audio_proc_avg / 1000000.0,
+        latency_info->jitter_min / 1000000.0,
+        latency_info->jitter_max / 1000000.0,
+        latency_info->jitter_avg / 1000000.0,
+        internal.round_trip_time.min / 1000000.0,
+        internal.round_trip_time.max / 1000000.0,
+        internal.round_trip_time.avg / 1000000.0);
+
+    internal.round_trip_time.min = UINT64_MAX;
+    internal.round_trip_time.max = 0;
+    internal.round_trip_time.total = 0;
+    internal.round_trip_time.count = 0;
 }
 
 uint64_t latency_manager_timestamp_now() {

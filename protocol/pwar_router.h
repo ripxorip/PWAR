@@ -23,6 +23,7 @@ typedef struct {
     uint32_t received_packets;
     uint8_t packet_received[PWAR_ROUTER_MAX_BUFFER_SIZE / PWAR_PACKET_MIN_CHUNK_SIZE];
     uint64_t current_seq; // Track current buffer sequence number
+    uint64_t seq_timestamp; // Timestamp for the current sequence
 } pwar_router_t;
 
 void pwar_router_init(pwar_router_t *router, uint32_t channel_count);

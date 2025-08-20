@@ -32,19 +32,20 @@ typedef struct {
     uint32_t num_packets;           // total number of packets in this sequence
     uint32_t packet_index;          // index of this packet in the sequence
 
+    uint64_t seq_timestamp;
     uint64_t timestamp;
 
     float samples[PWAR_CHANNELS][PWAR_PACKET_MAX_CHUNK_SIZE]; // interleaved samples
 } pwar_packet_t;
 
 typedef struct {
-    uint64_t audio_proc_min; // Minimum processing time in nanoseconds
-    uint64_t audio_proc_max; // Maximum processing time in nanoseconds
-    uint64_t audio_proc_avg; // Average processing time in nanoseconds
+    uint32_t audio_proc_min; // Minimum processing time in nanoseconds
+    uint32_t audio_proc_max; // Maximum processing time in nanoseconds
+    uint32_t audio_proc_avg; // Average processing time in nanoseconds
 
-    uint64_t jitter_min; // Minimum network jitter in nanoseconds
-    uint64_t jitter_max; // Maximum network jitter in nanoseconds
-    uint64_t jitter_avg; // Average network jitter in nanoseconds
+    uint32_t jitter_min; // Minimum network jitter in nanoseconds
+    uint32_t jitter_max; // Maximum network jitter in nanoseconds
+    uint32_t jitter_avg; // Average network jitter in nanoseconds
 
 } pwar_latency_info_t;
 

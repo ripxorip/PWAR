@@ -154,6 +154,7 @@ static void stream_buffer(float *samples, uint32_t n_samples, void *userdata) {
     memcpy(packet.samples[0], samples, n_samples * sizeof(float));
 
     packet.timestamp = latency_manager_timestamp_now();
+    packet.seq_timestamp = packet.timestamp; // Set seq_timestamp to the same value as timestamp
     if (sendto(data->sockfd, &packet, sizeof(packet), 0, (struct sockaddr *)&data->servaddr, sizeof(data->servaddr)) < 0) {
         perror("sendto failed");
     }
@@ -208,6 +209,7 @@ static void process_ping_pong(void *userdata, float *in, uint32_t n_samples, flo
     memcpy(packet.samples[0], in, n_samples * sizeof(float));
 
     packet.timestamp = latency_manager_timestamp_now();
+    packet.seq_timestamp = packet.timestamp; // Set seq_timestamp to the same value as timestamp
 
     /* Lock to prevent the response being received too soon */
     pthread_mutex_lock(&data->pwar_rcv_mutex); // Lock before get_chunk
