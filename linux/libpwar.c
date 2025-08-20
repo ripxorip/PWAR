@@ -1,10 +1,4 @@
-/*
- * pwarPipeWire.c - PipeWire <-> UDP streaming bridge for PWAR
- *
- * (c) 2025 Philip K. Gisslow
- * This file is part of the PipeWire ASIO Relay (PWAR) project.
- */
-
+#include "libpwar.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <errno.h>
@@ -266,29 +260,10 @@ static void do_quit(void *userdata, int signal_number) {
     pw_main_loop_quit(data->loop);
 }
 
-int main(int argc, char *argv[]) {
-    char stream_ip[64] = DEFAULT_STREAM_IP;
-    int stream_port = DEFAULT_STREAM_PORT;
-    int passthrough_test = 0;
-    int oneshot_mode = 0;
-    int buffer_size = 64; // Default value previously CHUNK_SIZE
-    for (int i = 1; i < argc; ++i) {
-        if ((strcmp(argv[i], "--ip") == 0 || strcmp(argv[i], "-i") == 0) && i + 1 < argc) {
-            strncpy(stream_ip, argv[++i], sizeof(stream_ip) - 1);
-            stream_ip[sizeof(stream_ip) - 1] = '\0';
-        } else if ((strcmp(argv[i], "--port") == 0 || (strcmp(argv[i], "-p") == 0)) && i + 1 < argc) {
-            stream_port = atoi(argv[++i]);
-        } else if ((strcmp(argv[i], "--passthrough_test") == 0) || (strcmp(argv[i], "-pt") == 0)) {
-            passthrough_test = 1;
-        } else if ((strcmp(argv[i], "--oneshot") == 0)) {
-            oneshot_mode = 1;
-        } else if ((strcmp(argv[i], "--buffer_size") == 0 || strcmp(argv[i], "-b") == 0) && i + 1 < argc) {
-            buffer_size = atoi(argv[++i]);
-        }
-    }
 
+int pwar_cli_run(const pwar_config_t *config) {
     char latency[32];
-    snprintf(latency, sizeof(latency), "%d/48000", buffer_size);
+    snprintf(latency, sizeof(latency), "%d/48000", config->buffer_size);
     setenv("PIPEWIRE_LATENCY", latency, 1);
 
     struct data data;
@@ -297,25 +272,22 @@ int main(int argc, char *argv[]) {
     uint8_t buffer[1024];
     struct spa_pod_builder b = SPA_POD_BUILDER_INIT(buffer, sizeof(buffer));
 
-    setup_socket(&data, stream_ip, stream_port);
-
+    setup_socket(&data, config->stream_ip, config->stream_port);
     setup_recv_socket(&data, DEFAULT_STREAM_PORT);
     pthread_mutex_init(&data.packet_mutex, NULL);
     pthread_cond_init(&data.packet_cond, NULL);
     data.packet_available = 0;
-    pthread_mutex_init(&data.pwar_rcv_mutex, NULL); // Init new mutex
+    pthread_mutex_init(&data.pwar_rcv_mutex, NULL);
     pthread_t recv_thread;
     pthread_create(&recv_thread, NULL, receiver_thread, &data);
-    pw_init(&argc, &argv);
+    pw_init(NULL, NULL);
     data.loop = pw_main_loop_new(NULL);
     pw_loop_add_signal(pw_main_loop_get_loop(data.loop), SIGINT, do_quit, &data);
     pw_loop_add_signal(pw_main_loop_get_loop(data.loop), SIGTERM, do_quit, &data);
-    data.passthrough_test = passthrough_test;
-    data.oneshot_mode = oneshot_mode;
+    data.passthrough_test = config->passthrough_test;
+    data.oneshot_mode = config->oneshot_mode;
     data.sine_phase = 0.0f;
-
     pwar_router_init(&data.linux_router, NUM_CHANNELS);
-
     data.filter = pw_filter_new_simple(
         pw_main_loop_get_loop(data.loop),
         "pwar",
@@ -353,7 +325,6 @@ int main(int argc, char *argv[]) {
             PW_KEY_PORT_NAME, "output-right",
             NULL),
         NULL, 0);
-
     params[0] = spa_process_latency_build(&b,
         SPA_PARAM_ProcessLatency,
         &SPA_PROCESS_LATENCY_INFO_INIT(

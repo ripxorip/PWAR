@@ -133,8 +133,8 @@ void *test_thread_func(void *arg) {
     data->pid_pipewire = fork();
     if (data->pid_pipewire == 0) {
         // Child process: exec pwar with arguments
-        //execl("build/pwar", "pwar", "--ip", "127.0.0.1", "--port", "8322", "--oneshot", "--buffer_size", "64", (char *)NULL);
-        execl("build/pwar", "pwar", "--ip", "127.0.0.1", "--port", "8322", "--buffer_size", "128", (char *)NULL);
+        //execl("build/pwar_cli", "pwar_cli", "--ip", "127.0.0.1", "--port", "8322", "--oneshot", "--buffer_size", "64", (char *)NULL);
+        execl("build/pwar_cli", "pwar_cli", "--ip", "127.0.0.1", "--port", "8322", "--buffer_size", "128", (char *)NULL);
         perror("execl pwar");
         exit(1);
     } else if (data->pid_pipewire < 0) {
