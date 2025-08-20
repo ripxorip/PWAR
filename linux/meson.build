@@ -31,11 +31,17 @@ executable(
   install: true,
 )
 
-qt5_dep = dependency('qt5', modules: ['Core', 'Widgets', 'Quick'], required: true)
+qt5 = import('qt5')
+qt5_dep = dependency('qt5', modules: ['Core', 'Widgets', 'Quick', 'Qml'], required: true)
+
+moc_gen = qt5.preprocess(
+  moc_headers: ['PwarController.h'],
+)
 
 executable(
   'pwar_gui',
-  ['pwar_gui.cpp'],
+  ['pwar_gui.cpp', 'PwarController.cpp', moc_gen],
+  include_directories: [include_directories('.'), include_directories('../protocol')],
   link_with: libpwar,
   dependencies: [qt5_dep, pipewire_dep, math_dep],
   install: true,

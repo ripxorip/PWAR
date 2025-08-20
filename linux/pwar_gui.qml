@@ -58,6 +58,7 @@ ApplicationWindow {
             width: 160
             height: 48
             Layout.alignment: Qt.AlignHCenter
+            onClicked: pwarController.doSomething()
         }
     }
 }
