@@ -29,7 +29,7 @@ ApplicationWindow {
     property color textSecondary: "#B0B0B0"
     
     // Layout properties
-    property int statusValueLeftMargin: 480
+    property int statusValueLeftMargin: 450
     
     // Background with subtle gradient
     background: Rectangle {
@@ -163,14 +163,14 @@ ApplicationWindow {
                 }
 
                 Label { 
-                    text: "Buffer"
+                    text: "Chunk Size"
                     color: textPrimary
                     font.bold: true
                 }
                 ComboBox {
                     id: bufferSizeCombo
                     Layout.fillWidth: true
-                    model: [64, 128, 256, 512, 1024]
+                    model: [64, 128]
                     currentIndex: {
                         var idx = model.indexOf(pwarController.bufferSize);
                         return idx >= 0 ? idx : 0;
@@ -426,12 +426,14 @@ ApplicationWindow {
                 }
 
                 Label { 
-                    text: "Latency (ms)"
+                    text: "Audio Proc (ms)"
                     color: textPrimary
                     font.bold: true
                 }
                 Label { 
-                    text: Number(pwarController.latencyMs || 0).toFixed(1)
+                    text: Number(pwarController.audioProcMinMs || 0).toFixed(3) + "/" + 
+                          Number(pwarController.audioProcMaxMs || 0).toFixed(3) + "/" + 
+                          Number(pwarController.audioProcAvgMs || 0).toFixed(3)
                     color: orangeAccent
                     font.bold: true
                     Layout.fillWidth: true
@@ -439,12 +441,14 @@ ApplicationWindow {
                 }
 
                 Label { 
-                    text: "Jitter (ms, p-p)"
+                    text: "Jitter (ms)"
                     color: textPrimary
                     font.bold: true
                 }
                 Label { 
-                    text: Number(pwarController.jitterMs || 0).toFixed(1)
+                    text: Number(pwarController.jitterMinMs || 0).toFixed(3) + "/" + 
+                          Number(pwarController.jitterMaxMs || 0).toFixed(3) + "/" + 
+                          Number(pwarController.jitterAvgMs || 0).toFixed(3)
                     color: orangeAccent
                     font.bold: true
                     Layout.fillWidth: true
@@ -457,7 +461,9 @@ ApplicationWindow {
                     font.bold: true
                 }
                 Label { 
-                    text: Number(pwarController.rttMs || 0).toFixed(1)
+                    text: Number(pwarController.rttMinMs || 0).toFixed(3) + "/" + 
+                          Number(pwarController.rttMaxMs || 0).toFixed(3) + "/" + 
+                          Number(pwarController.rttAvgMs || 0).toFixed(3)
                     color: orangeAccent
                     font.bold: true
                     Layout.fillWidth: true

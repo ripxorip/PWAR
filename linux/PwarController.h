@@ -1,6 +1,7 @@
 #pragma once
 #include <QObject>
 #include <QSettings>
+#include <QTimer>
 #include "libpwar.h"
 
 class PwarController : public QObject {
@@ -17,6 +18,17 @@ class PwarController : public QObject {
     Q_PROPERTY(QString selectedInputPort READ selectedInputPort WRITE setSelectedInputPort NOTIFY selectedInputPortChanged)
     Q_PROPERTY(QString selectedOutputLeftPort READ selectedOutputLeftPort WRITE setSelectedOutputLeftPort NOTIFY selectedOutputLeftPortChanged)
     Q_PROPERTY(QString selectedOutputRightPort READ selectedOutputRightPort WRITE setSelectedOutputRightPort NOTIFY selectedOutputRightPortChanged)
+    
+    // Latency metrics properties - all 9 values
+    Q_PROPERTY(double audioProcMinMs READ audioProcMinMs NOTIFY latencyMetricsChanged)
+    Q_PROPERTY(double audioProcMaxMs READ audioProcMaxMs NOTIFY latencyMetricsChanged)
+    Q_PROPERTY(double audioProcAvgMs READ audioProcAvgMs NOTIFY latencyMetricsChanged)
+    Q_PROPERTY(double jitterMinMs READ jitterMinMs NOTIFY latencyMetricsChanged)
+    Q_PROPERTY(double jitterMaxMs READ jitterMaxMs NOTIFY latencyMetricsChanged)
+    Q_PROPERTY(double jitterAvgMs READ jitterAvgMs NOTIFY latencyMetricsChanged)
+    Q_PROPERTY(double rttMinMs READ rttMinMs NOTIFY latencyMetricsChanged)
+    Q_PROPERTY(double rttMaxMs READ rttMaxMs NOTIFY latencyMetricsChanged)
+    Q_PROPERTY(double rttAvgMs READ rttAvgMs NOTIFY latencyMetricsChanged)
 
 public:
     explicit PwarController(QObject *parent = nullptr);
@@ -53,6 +65,19 @@ public:
 
     Q_INVOKABLE void start();
     Q_INVOKABLE void stop();
+    
+    // Latency metrics getters - all 9 values
+    double audioProcMinMs() const;
+    double audioProcMaxMs() const;
+    double audioProcAvgMs() const;
+    double jitterMinMs() const;
+    double jitterMaxMs() const;
+    double jitterAvgMs() const;
+    double rttMinMs() const;
+    double rttMaxMs() const;
+    double rttAvgMs() const;
+    
+    Q_INVOKABLE void updateLatencyMetrics();
 
 signals:
     void statusChanged();
@@ -67,6 +92,7 @@ signals:
     void selectedInputPortChanged();
     void selectedOutputLeftPortChanged();
     void selectedOutputRightPortChanged();
+    void latencyMetricsChanged();
 
 private:
     void applyRuntimeConfig();
@@ -82,4 +108,16 @@ private:
     QString m_selectedOutputLeftPort;
     QString m_selectedOutputRightPort;
     QSettings *m_settings;
+    
+    // Latency metrics - all 9 values
+    double m_audioProcMinMs;
+    double m_audioProcMaxMs;
+    double m_audioProcAvgMs;
+    double m_jitterMinMs;
+    double m_jitterMaxMs;
+    double m_jitterAvgMs;
+    double m_rttMinMs;
+    double m_rttMaxMs;
+    double m_rttAvgMs;
+    QTimer *m_latencyUpdateTimer;
 };

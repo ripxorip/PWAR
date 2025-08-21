@@ -150,6 +150,36 @@ void latency_manager_handle_latency_info(pwar_latency_info_t *latency_info) {
     internal.round_trip_time.max = 0;
     internal.round_trip_time.total = 0;
     internal.round_trip_time.count = 0;
+
+    internal.audio_proc.min = latency_info->audio_proc_min;
+    internal.audio_proc.max = latency_info->audio_proc_max;
+    internal.audio_proc.avg = latency_info->audio_proc_avg;
+
+    internal.network_jitter.min = latency_info->jitter_min;
+    internal.network_jitter.max = latency_info->jitter_max;
+    internal.network_jitter.avg = latency_info->jitter_avg;
+}
+
+void latency_manager_get_current_metrics(pwar_latency_metrics_t *metrics) {
+    if (!metrics) return;
+    
+    // Calculate averages for current data
+    internal.audio_proc.avg = (internal.audio_proc.count > 0) ? (internal.audio_proc.total / internal.audio_proc.count) : 0;
+    internal.network_jitter.avg = (internal.network_jitter.count > 0) ? (internal.network_jitter.total / internal.network_jitter.count) : 0;
+    internal.round_trip_time.avg = (internal.round_trip_time.count > 0) ? (internal.round_trip_time.total / internal.round_trip_time.count) : 0;
+    
+    // Convert from nanoseconds to milliseconds
+    metrics->audio_proc_min_ms = internal.audio_proc.min / 1000000.0;
+    metrics->audio_proc_max_ms = internal.audio_proc.max / 1000000.0;
+    metrics->audio_proc_avg_ms = internal.audio_proc.avg / 1000000.0;
+    
+    metrics->jitter_min_ms = internal.network_jitter.min / 1000000.0;
+    metrics->jitter_max_ms = internal.network_jitter.max / 1000000.0;
+    metrics->jitter_avg_ms = internal.network_jitter.avg / 1000000.0;
+    
+    metrics->rtt_min_ms = internal.round_trip_time.min / 1000000.0;
+    metrics->rtt_max_ms = internal.round_trip_time.max / 1000000.0;
+    metrics->rtt_avg_ms = internal.round_trip_time.avg / 1000000.0;
 }
 
 uint64_t latency_manager_timestamp_now() {

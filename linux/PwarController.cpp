@@ -5,7 +5,10 @@
 #include <QStandardPaths>
 
 PwarController::PwarController(QObject *parent) 
-    : QObject(parent), m_status("Ready"), m_initialized(false) {
+    : QObject(parent), m_status("Ready"), m_initialized(false),
+      m_audioProcMinMs(0.0), m_audioProcMaxMs(0.0), m_audioProcAvgMs(0.0),
+      m_jitterMinMs(0.0), m_jitterMaxMs(0.0), m_jitterAvgMs(0.0),
+      m_rttMinMs(0.0), m_rttMaxMs(0.0), m_rttAvgMs(0.0) {
     
     // Initialize QSettings with organization and application name
     m_settings = new QSettings("PWAR", "PwarController", this);
@@ -20,6 +23,11 @@ PwarController::PwarController(QObject *parent)
     // Populate port lists
     updateInputPorts();
     updateOutputPorts();
+    
+    // Initialize latency update timer
+    m_latencyUpdateTimer = new QTimer(this);
+    m_latencyUpdateTimer->setInterval(500); // Update every 500ms
+    connect(m_latencyUpdateTimer, &QTimer::timeout, this, &PwarController::updateLatencyMetrics);
     
     // Load saved settings
     loadSettings();
@@ -203,6 +211,9 @@ void PwarController::start() {
         setStatus("Running");
         emit isRunningChanged();
         
+        // Start latency metrics timer
+        m_latencyUpdateTimer->start();
+        
         // Link audio ports after a short delay
         linkAudioPorts();
     } else {
@@ -211,6 +222,9 @@ void PwarController::start() {
 }
 
 void PwarController::stop() {
+    // Stop latency metrics timer
+    m_latencyUpdateTimer->stop();
+    
     if (pwar_stop() == 0) {
         unlinkAudioPorts();
         setStatus("Stopped");
@@ -355,5 +369,98 @@ void PwarController::unlinkAudioPorts() {
         if (process.exitCode() == 0) {
             qDebug() << "Successfully unlinked:" << port;
         }
+    }
+}
+
+double PwarController::audioProcMinMs() const {
+    return m_audioProcMinMs;
+}
+
+double PwarController::audioProcMaxMs() const {
+    return m_audioProcMaxMs;
+}
+
+double PwarController::audioProcAvgMs() const {
+    return m_audioProcAvgMs;
+}
+
+double PwarController::jitterMinMs() const {
+    return m_jitterMinMs;
+}
+
+double PwarController::jitterMaxMs() const {
+    return m_jitterMaxMs;
+}
+
+double PwarController::jitterAvgMs() const {
+    return m_jitterAvgMs;
+}
+
+double PwarController::rttMinMs() const {
+    return m_rttMinMs;
+}
+
+double PwarController::rttMaxMs() const {
+    return m_rttMaxMs;
+}
+
+double PwarController::rttAvgMs() const {
+    return m_rttAvgMs;
+}
+
+void PwarController::updateLatencyMetrics() {
+    if (!m_initialized || !pwar_is_running()) {
+        return;
+    }
+    
+    pwar_latency_metrics_t metrics;
+    pwar_get_latency_metrics(&metrics);
+    
+    bool changed = false;
+    
+    // Update audio processing metrics
+    if (m_audioProcMinMs != metrics.audio_proc_min_ms) {
+        m_audioProcMinMs = metrics.audio_proc_min_ms;
+        changed = true;
+    }
+    if (m_audioProcMaxMs != metrics.audio_proc_max_ms) {
+        m_audioProcMaxMs = metrics.audio_proc_max_ms;
+        changed = true;
+    }
+    if (m_audioProcAvgMs != metrics.audio_proc_avg_ms) {
+        m_audioProcAvgMs = metrics.audio_proc_avg_ms;
+        changed = true;
+    }
+    
+    // Update jitter metrics
+    if (m_jitterMinMs != metrics.jitter_min_ms) {
+        m_jitterMinMs = metrics.jitter_min_ms;
+        changed = true;
+    }
+    if (m_jitterMaxMs != metrics.jitter_max_ms) {
+        m_jitterMaxMs = metrics.jitter_max_ms;
+        changed = true;
+    }
+    if (m_jitterAvgMs != metrics.jitter_avg_ms) {
+        m_jitterAvgMs = metrics.jitter_avg_ms;
+        changed = true;
+    }
+    
+    // Update RTT metrics
+    if (m_rttMinMs != metrics.rtt_min_ms) {
+        m_rttMinMs = metrics.rtt_min_ms;
+        changed = true;
+    }
+    if (m_rttMaxMs != metrics.rtt_max_ms) {
+        m_rttMaxMs = metrics.rtt_max_ms;
+        changed = true;
+    }
+    if (m_rttAvgMs != metrics.rtt_avg_ms) {
+        m_rttAvgMs = metrics.rtt_avg_ms;
+        changed = true;
+    }
+    
+    if (changed) {
+        emit latencyMetricsChanged();
     }
 }

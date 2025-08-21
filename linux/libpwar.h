@@ -2,6 +2,7 @@
 #define LIBPWAR
 
 #include <stdint.h>
+#include "../protocol/pwar_latency_types.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -27,6 +28,9 @@ int pwar_start(void);
 int pwar_stop(void);
 void pwar_cleanup(void);
 int pwar_is_running(void);
+
+// Get current latency metrics
+void pwar_get_latency_metrics(pwar_latency_metrics_t *metrics);
 
 #ifdef __cplusplus
 }
