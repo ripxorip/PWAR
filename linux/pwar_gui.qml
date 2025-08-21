@@ -7,9 +7,9 @@ import QtGraphicalEffects 1.15
 ApplicationWindow {
     visible: true
     width: 780
-    height: 1000
+    height: 1050
     minimumWidth: 780
-    minimumHeight: 1000
+    minimumHeight: 1050
     title: "PWAR Control Panel"
 
     // Enhanced graphite gray theme
@@ -110,7 +110,16 @@ ApplicationWindow {
                 ComboBox {
                     id: inputCombo
                     Layout.fillWidth: true
-                    model: ["Input 1", "Input 2", "Input 3"]
+                    model: pwarController.inputPorts
+                    currentIndex: {
+                        var idx = model.indexOf(pwarController.selectedInputPort);
+                        return idx >= 0 ? idx : -1;
+                    }
+                    onCurrentTextChanged: {
+                        if (currentText !== pwarController.selectedInputPort) {
+                            pwarController.selectedInputPort = currentText;
+                        }
+                    }
                 }
 
                 Label { 
@@ -121,7 +130,16 @@ ApplicationWindow {
                 ComboBox {
                     id: outputLeftCombo
                     Layout.fillWidth: true
-                    model: ["Output 1", "Output 2", "Output 3"]
+                    model: pwarController.outputPorts
+                    currentIndex: {
+                        var idx = model.indexOf(pwarController.selectedOutputLeftPort);
+                        return idx >= 0 ? idx : -1;
+                    }
+                    onCurrentTextChanged: {
+                        if (currentText !== pwarController.selectedOutputLeftPort) {
+                            pwarController.selectedOutputLeftPort = currentText;
+                        }
+                    }
                 }
 
                 Label { 
@@ -132,7 +150,16 @@ ApplicationWindow {
                 ComboBox {
                     id: outputRightCombo
                     Layout.fillWidth: true
-                    model: ["Output 1", "Output 2", "Output 3"]
+                    model: pwarController.outputPorts
+                    currentIndex: {
+                        var idx = model.indexOf(pwarController.selectedOutputRightPort);
+                        return idx >= 0 ? idx : -1;
+                    }
+                    onCurrentTextChanged: {
+                        if (currentText !== pwarController.selectedOutputRightPort) {
+                            pwarController.selectedOutputRightPort = currentText;
+                        }
+                    }
                 }
 
                 Label { 
