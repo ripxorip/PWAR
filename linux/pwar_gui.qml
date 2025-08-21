@@ -116,12 +116,23 @@ ApplicationWindow {
                 }
 
                 Label { 
-                    text: "Output"
+                    text: "Output Left"
                     color: textPrimary
                     font.bold: true
                 }
                 ComboBox {
-                    id: outputCombo
+                    id: outputLeftCombo
+                    Layout.fillWidth: true
+                    model: ["Output 1", "Output 2", "Output 3"]
+                }
+
+                Label { 
+                    text: "Output Right"
+                    color: textPrimary
+                    font.bold: true
+                }
+                ComboBox {
+                    id: outputRightCombo
                     Layout.fillWidth: true
                     model: ["Output 1", "Output 2", "Output 3"]
                 }
@@ -403,7 +414,8 @@ ApplicationWindow {
                 
                 onClicked: pwarController.start(
                     inputCombo.currentText,
-                    outputCombo.currentText,
+                    outputLeftCombo.currentText,
+                    outputRightCombo.currentText,
                     bufferSizeCombo.currentText,
                     ipField.text,
                     portField.text,
