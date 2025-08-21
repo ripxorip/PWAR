@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="media/pwar_logo.png" alt="PWAR Logo" width="300">
+</p>
+
 # PWAR: PipeWire ASIO Relay
 
 🎵 **PWAR (PipeWire ASIO Relay)** is a zero-drift, real-time audio bridge between Windows ASIO hosts and Linux PipeWire. It enables ultra-low-latency audio streaming across platforms, making it ideal for musicians, streamers, and audio professionals.
