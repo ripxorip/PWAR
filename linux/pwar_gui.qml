@@ -28,6 +28,9 @@ ApplicationWindow {
     property color textPrimary: "#E0E0E0"
     property color textSecondary: "#B0B0B0"
     
+    // Layout properties
+    property int statusValueLeftMargin: 480
+    
     // Background with subtle gradient
     background: Rectangle {
         color: graphiteDark
@@ -140,8 +143,16 @@ ApplicationWindow {
                 ComboBox {
                     id: bufferSizeCombo
                     Layout.fillWidth: true
-                    model: ["128", "256", "512", "1024"]
-                    currentIndex: 1
+                    model: [64, 128, 256, 512, 1024]
+                    currentIndex: {
+                        var idx = model.indexOf(pwarController.bufferSize);
+                        return idx >= 0 ? idx : 0;
+                    }
+                    onCurrentValueChanged: {
+                        if (currentValue !== pwarController.bufferSize) {
+                            pwarController.bufferSize = currentValue;
+                        }
+                    }
                 }
 
                 Label { 
@@ -149,7 +160,22 @@ ApplicationWindow {
                     color: textPrimary
                     font.bold: true
                 }
-                CheckBox { id: oneshotCheck }
+                CheckBox { 
+                    id: oneshotCheck
+                    checked: pwarController.oneshotMode
+                    onCheckedChanged: pwarController.oneshotMode = checked
+                }
+
+                Label { 
+                    text: "Passthrough Test"
+                    color: textPrimary
+                    font.bold: true
+                }
+                CheckBox { 
+                    id: passthroughCheck
+                    checked: pwarController.passthroughTest
+                    onCheckedChanged: pwarController.passthroughTest = checked
+                }
 
                 // bottom breathing room
                 Item { Layout.columnSpan: 2; height: 4 }
@@ -210,6 +236,12 @@ ApplicationWindow {
                     color: textPrimary
                     placeholderTextColor: textSecondary
                     selectByMouse: true
+                    text: pwarController.streamIp
+                    onTextChanged: {
+                        if (text !== pwarController.streamIp) {
+                            pwarController.streamIp = text;
+                        }
+                    }
                     
                     background: Rectangle {
                         color: graphiteMedium
@@ -250,6 +282,13 @@ ApplicationWindow {
                     color: textPrimary
                     placeholderTextColor: textSecondary
                     selectByMouse: true
+                    text: pwarController.streamPort.toString()
+                    onTextChanged: {
+                        var portNumber = parseInt(text);
+                        if (!isNaN(portNumber) && portNumber !== pwarController.streamPort) {
+                            pwarController.streamPort = portNumber;
+                        }
+                    }
                     
                     background: Rectangle {
                         color: graphiteMedium
@@ -328,16 +367,17 @@ ApplicationWindow {
                 }
                 RowLayout {
                     Layout.fillWidth: true
+                    Layout.leftMargin: statusValueLeftMargin
                     spacing: 12
                     Rectangle {
                         width: 16; height: 16; radius: 8
-                        color: pwarController.running ? orangeAccent : "#666666"
-                        border.color: pwarController.running ? "#FFFFFF" : "#444444"
+                        color: pwarController.isRunning ? orangeAccent : "#666666"
+                        border.color: pwarController.isRunning ? "#FFFFFF" : "#444444"
                         border.width: 2
                         
                         // Add pulsing animation when running
                         SequentialAnimation on opacity {
-                            running: pwarController.running
+                            running: pwarController.isRunning
                             loops: Animation.Infinite
                             NumberAnimation { to: 0.6; duration: 1000 }
                             NumberAnimation { to: 1.0; duration: 1000 }
@@ -347,14 +387,14 @@ ApplicationWindow {
                         Rectangle {
                             anchors.centerIn: parent
                             width: 8; height: 8; radius: 4
-                            color: pwarController.running ? "#FFFFFF" : "transparent"
+                            color: pwarController.isRunning ? "#FFFFFF" : "transparent"
                             opacity: 0.8
                         }
                     }
                     Label { 
-                        text: pwarController.running ? "Running" : "Stopped"
-                        color: pwarController.running ? orangeAccent : textSecondary
-                        font.bold: pwarController.running
+                        text: pwarController.isRunning ? "Running" : "Stopped"
+                        color: pwarController.isRunning ? orangeAccent : textSecondary
+                        font.bold: pwarController.isRunning
                     }
                 }
 
@@ -367,6 +407,8 @@ ApplicationWindow {
                     text: Number(pwarController.latencyMs || 0).toFixed(1)
                     color: orangeAccent
                     font.bold: true
+                    Layout.fillWidth: true
+                    Layout.leftMargin: statusValueLeftMargin
                 }
 
                 Label { 
@@ -378,6 +420,8 @@ ApplicationWindow {
                     text: Number(pwarController.jitterMs || 0).toFixed(1)
                     color: orangeAccent
                     font.bold: true
+                    Layout.fillWidth: true
+                    Layout.leftMargin: statusValueLeftMargin
                 }
 
                 Label { 
@@ -389,6 +433,8 @@ ApplicationWindow {
                     text: Number(pwarController.rttMs || 0).toFixed(1)
                     color: orangeAccent
                     font.bold: true
+                    Layout.fillWidth: true
+                    Layout.leftMargin: statusValueLeftMargin
                 }
 
                 Label { 
@@ -397,20 +443,35 @@ ApplicationWindow {
                     font.bold: true
                 }
                 Label { 
-                    text: String(pwarController.bufferFrames || bufferSizeCombo.currentText)
+                    text: String(pwarController.bufferSize)
                     color: orangeAccent
                     font.bold: true
+                    Layout.fillWidth: true
+                    Layout.leftMargin: statusValueLeftMargin
                 }
 
                 Label { 
-                    text: "XRuns"
+                    text: "Status"
                     color: textPrimary
                     font.bold: true
                 }
-                Label { 
-                    text: String(pwarController.xruns || 0)
-                    color: orangeAccent
-                    font.bold: true
+                Rectangle {
+                    Layout.fillWidth: true
+                    Layout.preferredHeight: statusLabel.height
+                    Layout.leftMargin: statusValueLeftMargin
+                    color: "transparent"
+                    
+                    Label { 
+                        id: statusLabel
+                        anchors.left: parent.left
+                        anchors.verticalCenter: parent.verticalCenter
+                        text: pwarController.status
+                        color: orangeAccent
+                        font.bold: true
+                        width: parent.width
+                        wrapMode: Text.WordWrap
+                        elide: Text.ElideRight
+                    }
                 }
 
                 Item { Layout.columnSpan: 2; height: 4 }
@@ -426,19 +487,20 @@ ApplicationWindow {
                 text: "Start"
                 font.bold: true
                 font.pixelSize: 14
+                enabled: !pwarController.isRunning
                 
                 background: Rectangle {
                     implicitWidth: 100
                     implicitHeight: 40
-                    color: parent.pressed ? "#E55A00" : (parent.hovered ? orangeHover : orangeAccent)
+                    color: parent.enabled ? (parent.pressed ? "#E55A00" : (parent.hovered ? orangeHover : orangeAccent)) : "#666666"
                     radius: 6
-                    border.color: parent.pressed ? "#CC5500" : orangeAccent
+                    border.color: parent.enabled ? (parent.pressed ? "#CC5500" : orangeAccent) : "#444444"
                     border.width: 2
                     
                     // Add gradient effect
                     gradient: Gradient {
-                        GradientStop { position: 0.0; color: parent.pressed ? "#E55A00" : (parent.hovered ? "#FF8533" : "#FF6A00") }
-                        GradientStop { position: 1.0; color: parent.pressed ? "#CC5500" : (parent.hovered ? "#E55A00" : "#E55A00") }
+                        GradientStop { position: 0.0; color: parent.enabled ? (parent.pressed ? "#E55A00" : (parent.hovered ? "#FF8533" : "#FF6A00")) : "#666666" }
+                        GradientStop { position: 1.0; color: parent.enabled ? (parent.pressed ? "#CC5500" : (parent.hovered ? "#E55A00" : "#E55A00")) : "#444444" }
                     }
                     
                     // Shadow effect
@@ -456,33 +518,26 @@ ApplicationWindow {
                 contentItem: Text {
                     text: parent.text
                     font: parent.font
-                    color: "#FFFFFF"
+                    color: parent.enabled ? "#FFFFFF" : "#AAAAAA"
                     horizontalAlignment: Text.AlignHCenter
                     verticalAlignment: Text.AlignVCenter
                 }
                 
-                onClicked: pwarController.start(
-                    inputCombo.currentText,
-                    outputLeftCombo.currentText,
-                    outputRightCombo.currentText,
-                    bufferSizeCombo.currentText,
-                    ipField.text,
-                    portField.text,
-                    oneshotCheck.checked
-                )
+                onClicked: pwarController.start()
             }
             
             Button {
                 text: "Stop"
                 font.bold: true
                 font.pixelSize: 14
+                enabled: pwarController.isRunning
                 
                 background: Rectangle {
                     implicitWidth: 100
                     implicitHeight: 40
-                    color: parent.pressed ? "#4A4A4A" : (parent.hovered ? "#5A5A5A" : graphiteLight)
+                    color: parent.enabled ? (parent.pressed ? "#4A4A4A" : (parent.hovered ? "#5A5A5A" : graphiteLight)) : "#333333"
                     radius: 6
-                    border.color: parent.pressed ? textSecondary : (parent.hovered ? orangeAccent : textSecondary)
+                    border.color: parent.enabled ? (parent.pressed ? textSecondary : (parent.hovered ? orangeAccent : textSecondary)) : "#444444"
                     border.width: 2
                     
                     // Shadow effect
@@ -501,7 +556,7 @@ ApplicationWindow {
                 contentItem: Text {
                     text: parent.text
                     font: parent.font
-                    color: parent.hovered ? orangeAccent : textPrimary
+                    color: parent.enabled ? (parent.hovered ? orangeAccent : textPrimary) : "#AAAAAA"
                     horizontalAlignment: Text.AlignHCenter
                     verticalAlignment: Text.AlignVCenter
                     

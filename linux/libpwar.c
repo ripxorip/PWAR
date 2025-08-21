@@ -28,6 +28,13 @@
 #define MAX_BUFFER_SIZE 4096
 #define NUM_CHANNELS 2
 
+// Global data for GUI mode
+static struct data *g_pwar_data = NULL;
+static pthread_t g_recv_thread;
+static int g_pwar_initialized = 0;
+static int g_pwar_running = 0;
+static pwar_config_t g_current_config;
+
 struct data;
 
 struct port {
@@ -65,6 +72,19 @@ static void setup_socket(struct data *data, const char *ip, int port);
 static void stream_buffer(float *samples, uint32_t n_samples, void *userdata);
 static void on_process(void *userdata, struct spa_io_position *position);
 static void do_quit(void *userdata, int signal_number);
+
+// Extract common initialization logic
+static int init_data_structure(struct data *data, const pwar_config_t *config);
+static int create_pipewire_filter(struct data *data);
+
+// New GUI functions
+int pwar_requires_restart(const pwar_config_t *old_config, const pwar_config_t *new_config);
+int pwar_update_config(const pwar_config_t *config);
+int pwar_init(const pwar_config_t *config);
+int pwar_start(void);
+int pwar_stop(void);
+void pwar_cleanup(void);
+int pwar_is_running(void);
 
 static void setup_recv_socket(struct data *data, int port) {
     data->recv_sockfd = socket(AF_INET, SOCK_DGRAM, 0);
@@ -260,36 +280,39 @@ static void do_quit(void *userdata, int signal_number) {
     pw_main_loop_quit(data->loop);
 }
 
+// Thread function to run PipeWire main loop for GUI mode
+static void *pipewire_thread_func(void *userdata) {
+    struct data *data = (struct data *)userdata;
+    pw_main_loop_run(data->loop);
+    return NULL;
+}
 
-int pwar_cli_run(const pwar_config_t *config) {
-    char latency[32];
-    snprintf(latency, sizeof(latency), "%d/48000", config->buffer_size);
-    setenv("PIPEWIRE_LATENCY", latency, 1);
+// Extract common initialization logic
+static int init_data_structure(struct data *data, const pwar_config_t *config) {
+    memset(data, 0, sizeof(struct data));
+    
+    setup_socket(data, config->stream_ip, config->stream_port);
+    setup_recv_socket(data, DEFAULT_STREAM_PORT);
+    pthread_mutex_init(&data->packet_mutex, NULL);
+    pthread_cond_init(&data->packet_cond, NULL);
+    data->packet_available = 0;
+    pthread_mutex_init(&data->pwar_rcv_mutex, NULL);
+    
+    data->passthrough_test = config->passthrough_test;
+    data->oneshot_mode = config->oneshot_mode;
+    data->sine_phase = 0.0f;
+    pwar_router_init(&data->linux_router, NUM_CHANNELS);
+    
+    return 0;
+}
 
-    struct data data;
-    memset(&data, 0, sizeof(data));
+static int create_pipewire_filter(struct data *data) {
     const struct spa_pod *params[1];
     uint8_t buffer[1024];
     struct spa_pod_builder b = SPA_POD_BUILDER_INIT(buffer, sizeof(buffer));
 
-    setup_socket(&data, config->stream_ip, config->stream_port);
-    setup_recv_socket(&data, DEFAULT_STREAM_PORT);
-    pthread_mutex_init(&data.packet_mutex, NULL);
-    pthread_cond_init(&data.packet_cond, NULL);
-    data.packet_available = 0;
-    pthread_mutex_init(&data.pwar_rcv_mutex, NULL);
-    pthread_t recv_thread;
-    pthread_create(&recv_thread, NULL, receiver_thread, &data);
-    pw_init(NULL, NULL);
-    data.loop = pw_main_loop_new(NULL);
-    pw_loop_add_signal(pw_main_loop_get_loop(data.loop), SIGINT, do_quit, &data);
-    pw_loop_add_signal(pw_main_loop_get_loop(data.loop), SIGTERM, do_quit, &data);
-    data.passthrough_test = config->passthrough_test;
-    data.oneshot_mode = config->oneshot_mode;
-    data.sine_phase = 0.0f;
-    pwar_router_init(&data.linux_router, NUM_CHANNELS);
-    data.filter = pw_filter_new_simple(
-        pw_main_loop_get_loop(data.loop),
+    data->filter = pw_filter_new_simple(
+        pw_main_loop_get_loop(data->loop),
         "pwar",
         pw_properties_new(
             PW_KEY_MEDIA_TYPE, "Audio",
@@ -297,8 +320,9 @@ int pwar_cli_run(const pwar_config_t *config) {
             PW_KEY_MEDIA_ROLE, "DSP",
             NULL),
         &filter_events,
-        &data);
-    data.in_port = pw_filter_add_port(data.filter,
+        data);
+
+    data->in_port = pw_filter_add_port(data->filter,
         PW_DIRECTION_INPUT,
         PW_FILTER_PORT_FLAG_MAP_BUFFERS,
         sizeof(struct port),
@@ -307,7 +331,8 @@ int pwar_cli_run(const pwar_config_t *config) {
             PW_KEY_PORT_NAME, "input",
             NULL),
         NULL, 0);
-    data.left_out_port = pw_filter_add_port(data.filter,
+
+    data->left_out_port = pw_filter_add_port(data->filter,
         PW_DIRECTION_OUTPUT,
         PW_FILTER_PORT_FLAG_MAP_BUFFERS,
         sizeof(struct port),
@@ -316,7 +341,8 @@ int pwar_cli_run(const pwar_config_t *config) {
             PW_KEY_PORT_NAME, "output-left",
             NULL),
         NULL, 0);
-    data.right_out_port = pw_filter_add_port(data.filter,
+
+    data->right_out_port = pw_filter_add_port(data->filter,
         PW_DIRECTION_OUTPUT,
         PW_FILTER_PORT_FLAG_MAP_BUFFERS,
         sizeof(struct port),
@@ -325,17 +351,182 @@ int pwar_cli_run(const pwar_config_t *config) {
             PW_KEY_PORT_NAME, "output-right",
             NULL),
         NULL, 0);
+
     params[0] = spa_process_latency_build(&b,
         SPA_PARAM_ProcessLatency,
         &SPA_PROCESS_LATENCY_INFO_INIT(
             .ns = 10 * SPA_NSEC_PER_MSEC
         ));
-    if (pw_filter_connect(data.filter,
+
+    if (pw_filter_connect(data->filter,
             PW_FILTER_FLAG_RT_PROCESS,
             params, 1) < 0) {
+        return -1;
+    }
+
+    return 0;
+}
+
+// New GUI functions
+int pwar_requires_restart(const pwar_config_t *old_config, const pwar_config_t *new_config) {
+    if (old_config->buffer_size != new_config->buffer_size ||
+        strcmp(old_config->stream_ip, new_config->stream_ip) != 0 ||
+        old_config->stream_port != new_config->stream_port) {
+        return 1;
+    }
+    return 0;
+}
+
+int pwar_update_config(const pwar_config_t *config) {
+    if (!g_pwar_initialized) {
+        return -1;
+    }
+
+    if (pwar_requires_restart(&g_current_config, config)) {
+        return -2; // Signal that restart is needed
+    }
+
+    // Apply runtime-changeable settings
+    g_pwar_data->passthrough_test = config->passthrough_test;
+    g_pwar_data->oneshot_mode = config->oneshot_mode;
+    g_current_config = *config;
+    
+    return 0;
+}
+
+int pwar_init(const pwar_config_t *config) {
+    if (g_pwar_initialized) {
+        return -1;
+    }
+
+    g_current_config = *config;
+
+    char latency[32];
+    snprintf(latency, sizeof(latency), "%d/48000", config->buffer_size);
+    setenv("PIPEWIRE_LATENCY", latency, 1);
+
+    g_pwar_data = malloc(sizeof(struct data));
+    if (!g_pwar_data) {
+        return -1;
+    }
+
+    if (init_data_structure(g_pwar_data, config) < 0) {
+        free(g_pwar_data);
+        g_pwar_data = NULL;
+        return -1;
+    }
+
+    pthread_create(&g_recv_thread, NULL, receiver_thread, g_pwar_data);
+    pw_init(NULL, NULL);
+    g_pwar_data->loop = pw_main_loop_new(NULL);
+
+    g_pwar_initialized = 1;
+    return 0;
+}
+
+int pwar_start(void) {
+    if (!g_pwar_initialized || g_pwar_running) {
+        return -1;
+    }
+
+    // Create a new main loop for this start session
+    if (g_pwar_data->loop) {
+        pw_main_loop_destroy(g_pwar_data->loop);
+    }
+    g_pwar_data->loop = pw_main_loop_new(NULL);
+
+    if (create_pipewire_filter(g_pwar_data) < 0) {
+        return -1;
+    }
+
+    // Start the PipeWire main loop in a separate thread for GUI mode
+    pthread_t pw_thread;
+    pthread_create(&pw_thread, NULL, pipewire_thread_func, g_pwar_data);
+    pthread_detach(pw_thread); // We don't need to join this thread
+
+    g_pwar_running = 1;
+    return 0;
+}
+
+int pwar_stop(void) {
+    if (!g_pwar_running) {
+        return -1;
+    }
+
+    // Signal the PipeWire main loop to quit
+    if (g_pwar_data->loop) {
+        pw_main_loop_quit(g_pwar_data->loop);
+    }
+
+    if (g_pwar_data->filter) {
+        pw_filter_destroy(g_pwar_data->filter);
+        g_pwar_data->filter = NULL;
+    }
+
+    g_pwar_running = 0;
+    return 0;
+}
+
+void pwar_cleanup(void) {
+    if (g_pwar_running) {
+        pwar_stop();
+    }
+
+    if (g_pwar_initialized) {
+        pthread_cancel(g_recv_thread);
+        pthread_join(g_recv_thread, NULL);
+
+        if (g_pwar_data->loop) {
+            pw_main_loop_destroy(g_pwar_data->loop);
+        }
+        pw_deinit();
+
+        if (g_pwar_data->sockfd > 0) {
+            close(g_pwar_data->sockfd);
+        }
+        if (g_pwar_data->recv_sockfd > 0) {
+            close(g_pwar_data->recv_sockfd);
+        }
+
+        pthread_mutex_destroy(&g_pwar_data->packet_mutex);
+        pthread_cond_destroy(&g_pwar_data->packet_cond);
+        pthread_mutex_destroy(&g_pwar_data->pwar_rcv_mutex);
+
+        free(g_pwar_data);
+        g_pwar_data = NULL;
+        g_pwar_initialized = 0;
+    }
+}
+
+int pwar_is_running(void) {
+    return g_pwar_running;
+}
+
+
+int pwar_cli_run(const pwar_config_t *config) {
+    char latency[32];
+    snprintf(latency, sizeof(latency), "%d/48000", config->buffer_size);
+    setenv("PIPEWIRE_LATENCY", latency, 1);
+
+    struct data data;
+    pthread_t recv_thread;
+
+    // Use the shared initialization function
+    if (init_data_structure(&data, config) < 0) {
+        return -1;
+    }
+
+    pthread_create(&recv_thread, NULL, receiver_thread, &data);
+    pw_init(NULL, NULL);
+    data.loop = pw_main_loop_new(NULL);
+    pw_loop_add_signal(pw_main_loop_get_loop(data.loop), SIGINT, do_quit, &data);
+    pw_loop_add_signal(pw_main_loop_get_loop(data.loop), SIGTERM, do_quit, &data);
+
+    if (create_pipewire_filter(&data) < 0) {
         fprintf(stderr, "can't connect\n");
         return -1;
     }
+
     pw_main_loop_run(data.loop);
     pw_filter_destroy(data.filter);
     pw_main_loop_destroy(data.loop);
