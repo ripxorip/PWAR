@@ -36,6 +36,7 @@ qt5_dep = dependency('qt5', modules: ['Core', 'Widgets', 'Quick', 'Qml'], requir
 
 moc_gen = qt5.preprocess(
   moc_headers: ['PwarController.h'],
+  qresources: ['resources.qrc']
 )
 
 executable(
@@ -49,3 +50,4 @@ executable(
 
 # Optionally install QML file
 install_data('pwar_gui.qml')
+install_data('../media/pwar_icon.png', install_dir: 'share/icons/hicolor/256x256/apps')

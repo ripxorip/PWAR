@@ -7,10 +7,10 @@ import QtGraphicalEffects 1.15
 ApplicationWindow {
     visible: true
     width: 780
-    height: 900
+    height: 1000
     minimumWidth: 780
-    minimumHeight: 900
-    title: "PWAR"
+    minimumHeight: 1000
+    title: "PWAR Control Panel"
 
     // Enhanced graphite gray theme
     Material.theme: Material.Dark
@@ -42,23 +42,18 @@ ApplicationWindow {
         anchors.margins: 20
         spacing: 16
 
-        Label {
-            text: "PWAR Control Panel"
-            font.pixelSize: 28
-            font.bold: true
-            font.family: "Segoe UI, Arial, sans-serif"
-            horizontalAlignment: Text.AlignHCenter
+        // ==== Logo and Title Section ====
+        ColumnLayout {
             Layout.alignment: Qt.AlignHCenter
             Layout.fillWidth: true
-            color: orangeHover
-            
-            // Add subtle shadow effect
-            layer.enabled: true
-            layer.effect: DropShadow {
-                horizontalOffset: 0
-                verticalOffset: 2
-                radius: 4
-                color: "#40000000"
+            spacing: 12
+
+            Image {
+                source: "qrc:/logo_round.png"
+                Layout.alignment: Qt.AlignHCenter
+                Layout.preferredWidth: 160
+                Layout.preferredHeight: 160
+                fillMode: Image.PreserveAspectFit
             }
         }
 
@@ -212,6 +207,33 @@ ApplicationWindow {
                     Layout.fillWidth: true
                     placeholderText: "e.g. 192.168.1.10"
                     inputMethodHints: Qt.ImhPreferNumbers
+                    color: textPrimary
+                    placeholderTextColor: textSecondary
+                    selectByMouse: true
+                    
+                    background: Rectangle {
+                        color: graphiteMedium
+                        radius: 4
+                        border.color: parent.activeFocus ? orangeAccent : (parent.hovered ? orangeHover : "#555555")
+                        border.width: parent.activeFocus ? 2 : 1
+                        
+                        Behavior on border.color { ColorAnimation { duration: 150 } }
+                        Behavior on border.width { NumberAnimation { duration: 150 } }
+                        
+                        // Subtle glow when focused
+                        Rectangle {
+                            anchors.fill: parent
+                            anchors.margins: -2
+                            radius: parent.radius + 2
+                            color: "transparent"
+                            border.color: orangeAccent
+                            border.width: parent.parent.activeFocus ? 1 : 0
+                            opacity: parent.parent.activeFocus ? 0.3 : 0
+                            
+                            Behavior on opacity { NumberAnimation { duration: 150 } }
+                            Behavior on border.width { NumberAnimation { duration: 150 } }
+                        }
+                    }
                 }
 
                 Label { 
@@ -225,6 +247,33 @@ ApplicationWindow {
                     placeholderText: "e.g. 5600"
                     inputMethodHints: Qt.ImhDigitsOnly
                     validator: IntValidator { bottom: 1; top: 65535 }
+                    color: textPrimary
+                    placeholderTextColor: textSecondary
+                    selectByMouse: true
+                    
+                    background: Rectangle {
+                        color: graphiteMedium
+                        radius: 4
+                        border.color: parent.activeFocus ? orangeAccent : (parent.hovered ? orangeHover : "#555555")
+                        border.width: parent.activeFocus ? 2 : 1
+                        
+                        Behavior on border.color { ColorAnimation { duration: 150 } }
+                        Behavior on border.width { NumberAnimation { duration: 150 } }
+                        
+                        // Subtle glow when focused
+                        Rectangle {
+                            anchors.fill: parent
+                            anchors.margins: -2
+                            radius: parent.radius + 2
+                            color: "transparent"
+                            border.color: orangeAccent
+                            border.width: parent.parent.activeFocus ? 1 : 0
+                            opacity: parent.parent.activeFocus ? 0.3 : 0
+                            
+                            Behavior on opacity { NumberAnimation { duration: 150 } }
+                            Behavior on border.width { NumberAnimation { duration: 150 } }
+                        }
+                    }
                 }
 
                 Item { Layout.columnSpan: 2; height: 4 }
@@ -388,8 +437,8 @@ ApplicationWindow {
                     
                     // Add gradient effect
                     gradient: Gradient {
-                        GradientStop { position: 0.0; color: parent.pressed ? "#E55A00" : (parent.parent.hovered ? "#FF8533" : "#FF6A00") }
-                        GradientStop { position: 1.0; color: parent.pressed ? "#CC5500" : (parent.parent.hovered ? "#E55A00" : "#E55A00") }
+                        GradientStop { position: 0.0; color: parent.pressed ? "#E55A00" : (parent.hovered ? "#FF8533" : "#FF6A00") }
+                        GradientStop { position: 1.0; color: parent.pressed ? "#CC5500" : (parent.hovered ? "#E55A00" : "#E55A00") }
                     }
                     
                     // Shadow effect
