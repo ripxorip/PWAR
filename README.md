@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="media/pwar_logo.png" alt="PWAR Logo" width="300" style="border-radius: 50%;">
+  <img src="media/pwar_logo_round.png" alt="PWAR Logo" width="300"">
 </p>
 
 # PWAR: PipeWire ASIO Relay
