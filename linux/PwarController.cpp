@@ -8,7 +8,8 @@ PwarController::PwarController(QObject *parent)
     : QObject(parent), m_status("Ready"), m_initialized(false),
       m_audioProcMinMs(0.0), m_audioProcMaxMs(0.0), m_audioProcAvgMs(0.0),
       m_jitterMinMs(0.0), m_jitterMaxMs(0.0), m_jitterAvgMs(0.0),
-      m_rttMinMs(0.0), m_rttMaxMs(0.0), m_rttAvgMs(0.0) {
+      m_rttMinMs(0.0), m_rttMaxMs(0.0), m_rttAvgMs(0.0),
+      m_currentWindowsBufferSize(0) {
     
     // Initialize QSettings with organization and application name
     m_settings = new QSettings("PWAR", "PwarController", this);
@@ -408,6 +409,10 @@ double PwarController::rttAvgMs() const {
     return m_rttAvgMs;
 }
 
+int PwarController::currentWindowsBufferSize() const {
+    return m_currentWindowsBufferSize;
+}
+
 void PwarController::updateLatencyMetrics() {
     if (!m_initialized || !pwar_is_running()) {
         return;
@@ -458,6 +463,13 @@ void PwarController::updateLatencyMetrics() {
     if (m_rttAvgMs != metrics.rtt_avg_ms) {
         m_rttAvgMs = metrics.rtt_avg_ms;
         changed = true;
+    }
+    
+    // Update current Windows buffer size
+    uint32_t currentBufferSize = pwar_get_current_windows_buffer_size();
+    if (m_currentWindowsBufferSize != (int)currentBufferSize) {
+        m_currentWindowsBufferSize = (int)currentBufferSize;
+        emit currentWindowsBufferSizeChanged();
     }
     
     if (changed) {

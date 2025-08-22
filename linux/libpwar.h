@@ -32,6 +32,9 @@ int pwar_is_running(void);
 // Get current latency metrics
 void pwar_get_latency_metrics(pwar_latency_metrics_t *metrics);
 
+// Get current Windows buffer size in samples
+uint32_t pwar_get_current_windows_buffer_size(void);
+
 #ifdef __cplusplus
 }
 #endif

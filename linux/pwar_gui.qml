@@ -471,12 +471,12 @@ ApplicationWindow {
                 }
 
                 Label { 
-                    text: "Buffer (frames)"
+                    text: "ASIO Buffer Size"
                     color: textPrimary
                     font.bold: true
                 }
                 Label { 
-                    text: String(pwarController.bufferSize)
+                    text: String(pwarController.currentWindowsBufferSize || 0)
                     color: orangeAccent
                     font.bold: true
                     Layout.fillWidth: true

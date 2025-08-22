@@ -28,6 +28,8 @@
 #define MAX_BUFFER_SIZE 4096
 #define NUM_CHANNELS 2
 
+//TODO - Add signaling when no buffer is ready somehow, also count the number of xruns the last few seconds and present
+
 // Global data for GUI mode
 static struct data *g_pwar_data = NULL;
 static pthread_t g_recv_thread;
@@ -62,6 +64,8 @@ struct data {
 
     pwar_router_t linux_router;
     pthread_mutex_t pwar_rcv_mutex; // Mutex for receive buffer
+
+    uint32_t current_windows_buffer_size; // Current Windows buffer size in samples
 };
 
 static void setup_recv_socket(struct data *data, int port);
@@ -124,6 +128,7 @@ static void *receiver_thread(void *userdata) {
         if (n == (ssize_t)sizeof(pwar_packet_t)) {
             pwar_packet_t *packet = (pwar_packet_t *)recv_buffer;
             latency_manager_process_packet_server(packet);
+            data->current_windows_buffer_size = packet->n_samples * packet->num_packets;
             if (data->oneshot_mode) {
                 pthread_mutex_lock(&data->packet_mutex);
                 data->latest_packet = *packet;
@@ -555,4 +560,11 @@ void pwar_get_latency_metrics(pwar_latency_metrics_t *metrics) {
         metrics->rtt_max_ms = 0.0;
         metrics->rtt_avg_ms = 0.0;
     }
+}
+
+uint32_t pwar_get_current_windows_buffer_size(void) {
+    if (g_pwar_initialized && g_pwar_running && g_pwar_data) {
+        return g_pwar_data->current_windows_buffer_size;
+    }
+    return 0;
 }

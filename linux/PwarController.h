@@ -29,6 +29,9 @@ class PwarController : public QObject {
     Q_PROPERTY(double rttMinMs READ rttMinMs NOTIFY latencyMetricsChanged)
     Q_PROPERTY(double rttMaxMs READ rttMaxMs NOTIFY latencyMetricsChanged)
     Q_PROPERTY(double rttAvgMs READ rttAvgMs NOTIFY latencyMetricsChanged)
+    
+    // Current Windows buffer size property
+    Q_PROPERTY(int currentWindowsBufferSize READ currentWindowsBufferSize NOTIFY currentWindowsBufferSizeChanged)
 
 public:
     explicit PwarController(QObject *parent = nullptr);
@@ -77,6 +80,9 @@ public:
     double rttMaxMs() const;
     double rttAvgMs() const;
     
+    // Current Windows buffer size getter
+    int currentWindowsBufferSize() const;
+    
     Q_INVOKABLE void updateLatencyMetrics();
 
 signals:
@@ -93,6 +99,7 @@ signals:
     void selectedOutputLeftPortChanged();
     void selectedOutputRightPortChanged();
     void latencyMetricsChanged();
+    void currentWindowsBufferSizeChanged();
 
 private:
     void applyRuntimeConfig();
@@ -120,4 +127,7 @@ private:
     double m_rttMaxMs;
     double m_rttAvgMs;
     QTimer *m_latencyUpdateTimer;
+    
+    // Current Windows buffer size
+    int m_currentWindowsBufferSize;
 };
