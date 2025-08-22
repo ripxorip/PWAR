@@ -1,5 +1,5 @@
-#ifndef PWAR_LATENCY_TYPES_H
-#define PWAR_LATENCY_TYPES_H
+#ifndef PWAR_LATENCY_TYPES
+#define PWAR_LATENCY_TYPES
 
 typedef struct {
     double audio_proc_min_ms;
@@ -11,6 +11,8 @@ typedef struct {
     double rtt_min_ms;
     double rtt_max_ms;
     double rtt_avg_ms;
+
+    uint32_t xruns;
 } pwar_latency_metrics_t;
 
-#endif /* PWAR_LATENCY_TYPES_H */
+#endif /* PWAR_LATENCY_TYPES */

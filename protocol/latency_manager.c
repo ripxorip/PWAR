@@ -34,6 +34,9 @@ static struct {
     latency_stat_t network_jitter; // Statistics for network jitter
     latency_stat_t round_trip_time; // Statistics for round trip time
 
+    uint32_t xruns_2sec; // Number of xruns in the last 2 seconds
+    uint32_t xruns;
+
 } internal = {0};
 
 void latency_manager_init() {
@@ -158,6 +161,9 @@ void latency_manager_handle_latency_info(pwar_latency_info_t *latency_info) {
     internal.network_jitter.min = latency_info->jitter_min;
     internal.network_jitter.max = latency_info->jitter_max;
     internal.network_jitter.avg = latency_info->jitter_avg;
+
+    internal.xruns_2sec = internal.xruns; // Store xruns for the last 2 seconds
+    internal.xruns = 0; // Reset xruns count
 }
 
 void latency_manager_get_current_metrics(pwar_latency_metrics_t *metrics) {
@@ -180,6 +186,18 @@ void latency_manager_get_current_metrics(pwar_latency_metrics_t *metrics) {
     metrics->rtt_min_ms = internal.round_trip_time.min / 1000000.0;
     metrics->rtt_max_ms = internal.round_trip_time.max / 1000000.0;
     metrics->rtt_avg_ms = internal.round_trip_time.avg / 1000000.0;
+
+    if (internal.xruns_2sec == 0) {
+        if (internal.xruns > 1000) internal.xruns = 1000;
+        metrics->xruns = internal.xruns; // No xruns in the last 2 seconds
+    } else {
+        metrics->xruns = internal.xruns_2sec; // Return the xruns count from the last 2 seconds
+    }
+}
+
+
+void latency_manager_report_xrun() {
+    internal.xruns++;
 }
 
 uint64_t latency_manager_timestamp_now() {

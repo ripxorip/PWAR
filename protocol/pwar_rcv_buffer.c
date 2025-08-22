@@ -35,7 +35,6 @@ int pwar_rcv_get_chunk(float *chunks, uint32_t channels, uint32_t chunk_size) {
             memset(&chunks[ch * chunk_size], 0, chunk_size * sizeof(float));
         }
         rcv.ping_pong = !rcv.ping_pong; // swap buffers
-        printf("\033[0;31m--- ERROR -- No valid buffer ready, outputting silence\033[0m\n");
         return 0;
     }
     uint32_t n_samples = rcv.n_samples[idx];

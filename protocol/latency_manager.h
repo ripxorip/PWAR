@@ -20,4 +20,6 @@ void latency_manager_handle_latency_info(pwar_latency_info_t *latency_info);
 // New function to get current metrics for GUI display
 void latency_manager_get_current_metrics(pwar_latency_metrics_t *metrics);
 
+void latency_manager_report_xrun();
+
 #endif /* LATENCY_MANAGER */

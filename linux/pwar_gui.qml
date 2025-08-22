@@ -471,6 +471,19 @@ ApplicationWindow {
                 }
 
                 Label { 
+                    text: "XRUNS (last 2s)"
+                    color: textPrimary
+                    font.bold: true
+                }
+                Label { 
+                    text: String(pwarController.xruns || 0)
+                    color: orangeAccent
+                    font.bold: true
+                    Layout.fillWidth: true
+                    Layout.leftMargin: statusValueLeftMargin
+                }
+
+                Label { 
                     text: "ASIO Buffer Size"
                     color: textPrimary
                     font.bold: true

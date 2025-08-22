@@ -29,6 +29,7 @@ class PwarController : public QObject {
     Q_PROPERTY(double rttMinMs READ rttMinMs NOTIFY latencyMetricsChanged)
     Q_PROPERTY(double rttMaxMs READ rttMaxMs NOTIFY latencyMetricsChanged)
     Q_PROPERTY(double rttAvgMs READ rttAvgMs NOTIFY latencyMetricsChanged)
+    Q_PROPERTY(uint32_t xruns READ xruns NOTIFY latencyMetricsChanged)
     
     // Current Windows buffer size property
     Q_PROPERTY(int currentWindowsBufferSize READ currentWindowsBufferSize NOTIFY currentWindowsBufferSizeChanged)
@@ -69,7 +70,7 @@ public:
     Q_INVOKABLE void start();
     Q_INVOKABLE void stop();
     
-    // Latency metrics getters - all 9 values
+    // Latency metrics getters
     double audioProcMinMs() const;
     double audioProcMaxMs() const;
     double audioProcAvgMs() const;
@@ -79,6 +80,7 @@ public:
     double rttMinMs() const;
     double rttMaxMs() const;
     double rttAvgMs() const;
+    uint32_t xruns() const;
     
     // Current Windows buffer size getter
     int currentWindowsBufferSize() const;
@@ -116,7 +118,7 @@ private:
     QString m_selectedOutputRightPort;
     QSettings *m_settings;
     
-    // Latency metrics - all 9 values
+    // Latency metrics
     double m_audioProcMinMs;
     double m_audioProcMaxMs;
     double m_audioProcAvgMs;
@@ -126,6 +128,7 @@ private:
     double m_rttMinMs;
     double m_rttMaxMs;
     double m_rttAvgMs;
+    uint32_t m_xruns;
     QTimer *m_latencyUpdateTimer;
     
     // Current Windows buffer size

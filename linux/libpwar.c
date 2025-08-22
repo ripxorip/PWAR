@@ -28,8 +28,6 @@
 #define MAX_BUFFER_SIZE 4096
 #define NUM_CHANNELS 2
 
-//TODO - Add signaling when no buffer is ready somehow, also count the number of xruns the last few seconds and present
-
 // Global data for GUI mode
 static struct data *g_pwar_data = NULL;
 static pthread_t g_recv_thread;
@@ -209,6 +207,7 @@ static void process_one_shot(void *userdata, float *in, uint32_t n_samples, floa
     }
     pthread_mutex_unlock(&data->packet_mutex);
     if (!got_packet) {
+        latency_manager_report_xrun();
         printf("\033[0;31m--- ERROR -- No valid packet received, outputting silence\n");
         printf("I wanted seq: %u and got seq: %lu\033[0m\n", data->seq - 1, data->latest_packet.seq);
         if (left_out)
@@ -244,7 +243,10 @@ static void process_ping_pong(void *userdata, float *in, uint32_t n_samples, flo
     float linux_rcv_buffers[NUM_CHANNELS * n_samples];
     memset(linux_rcv_buffers, 0, sizeof(linux_rcv_buffers));
     // Get the chunk from n-1 (ping-pong)
-    pwar_rcv_get_chunk(linux_rcv_buffers, NUM_CHANNELS, n_samples);
+    if (!pwar_rcv_get_chunk(linux_rcv_buffers, NUM_CHANNELS, n_samples)) {
+        printf("\033[0;31m--- ERROR -- No valid buffer ready, outputting silence\033[0m\n");
+        latency_manager_report_xrun();
+    }
 
     pthread_mutex_unlock(&data->pwar_rcv_mutex); // Unlock after get_chunk
 
@@ -559,6 +561,7 @@ void pwar_get_latency_metrics(pwar_latency_metrics_t *metrics) {
         metrics->rtt_min_ms = 0.0;
         metrics->rtt_max_ms = 0.0;
         metrics->rtt_avg_ms = 0.0;
+        metrics->xruns = 0;
     }
 }
 
