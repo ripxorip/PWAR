@@ -164,6 +164,8 @@ static void stream_buffer(float *samples, uint32_t n_samples, void *userdata) {
     pwar_packet_t packet;
     packet.seq = data->seq++;
     packet.n_samples = n_samples;
+    packet.packet_index = 0; // Reset packet index for new packet, (as its oneshot mode)
+    packet.num_packets = 1; // Only one packet in oneshot mode
     // Just stream the first channel for now.. FIXME: This should be updated to handle multiple channels properly in the future
     memcpy(packet.samples[0], samples, n_samples * sizeof(float));
 
@@ -224,6 +226,8 @@ static void process_ping_pong(void *userdata, float *in, uint32_t n_samples, flo
 
     packet.timestamp = latency_manager_timestamp_now();
     packet.seq_timestamp = packet.timestamp; // Set seq_timestamp to the same value as timestamp
+    packet.num_packets = 1;
+    packet.packet_index = 0;
 
     /* Lock to prevent the response being received too soon */
     pthread_mutex_lock(&data->pwar_rcv_mutex); // Lock before get_chunk
