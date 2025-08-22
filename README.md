@@ -150,6 +150,17 @@ Replace `192.168.66.3` with the IP address of the Windows ASIO host to stream to
 
 ---
 
+## 💖 Support the Project
+
+PWAR is free and open source. If you find it useful, consider supporting its development:
+
+[<img src="https://storage.ko-fi.com/cdn/kofi3.png?v=3" alt="Ko-fi" height="32" />](https://ko-fi.com/ripxorip)
+[<img src="https://raw.githubusercontent.com/simple-icons/simple-icons/develop/icons/githubsponsors.svg" alt="GitHub Sponsors" height="32" />](https://github.com/sponsors/ripxorip)
+
+Every bit helps me keep improving PWAR — thank you! 🙏
+
+---
+
 ## 🤝 Contributing
 
 I have limited time to spend on this project, so contributions are very welcome! If you have improvements, bug fixes, or new features, please open a Pull Request (PR). I appreciate your help in making PWAR even better!
