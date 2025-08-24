@@ -85,13 +85,13 @@ pwarASIO::pwarASIO(LPUNKNOWN pUnk, HRESULT* phr)
       samplePosition(0),
       sampleRate(48000.0),
       callbacks(nullptr),
-      blockFrames(kBlockFrames),
-      inputLatency(kBlockFrames),
-      outputLatency(kBlockFrames * 2),
+      blockFrames(kDefaultBlockFrames),
+      inputLatency(kDefaultBlockFrames),
+      outputLatency(kDefaultBlockFrames * 2),
       activeInputs(0),
       activeOutputs(0),
       toggle(0),
-      milliSeconds(static_cast<long>((kBlockFrames * 1000) / 48000.0)),
+      milliSeconds(static_cast<long>((kDefaultBlockFrames * 1000) / 48000.0)),
       active(false),
       started(false),
       timeInfoMode(false),
@@ -102,15 +102,27 @@ pwarASIO::pwarASIO(LPUNKNOWN pUnk, HRESULT* phr)
       udpWSAInitialized(false),
       udpSendIp("192.168.66.2")
 {
-    for (long i = 0; i < kNumInputs; ++i) {
+    // Initialize buffer pointers to null
+    for (long i = 0; i < kNumInputs * 2; ++i) {
         inputBuffers[i] = nullptr;
+    }
+    for (long i = 0; i < kNumOutputs * 2; ++i) {
+        outputBuffers[i] = nullptr;
+    }
+    for (long i = 0; i < kNumInputs; ++i) {
         inMap[i] = 0;
     }
     for (long i = 0; i < kNumOutputs; ++i) {
-        outputBuffers[i] = nullptr;
         outMap[i] = 0;
     }
+    
+    // Initialize internal buffers to null
+    input_buffers = nullptr;
+    output_buffers = nullptr;
+    
     callbacks = nullptr;
+    strcpy(errorMessage, "No error");
+    
     parseConfigFile();
     initUdpSender();
     startUdpListener();
@@ -136,8 +148,17 @@ void pwarASIO::getErrorMessage(char* string) {
 }
 
 ASIOBool pwarASIO::init(void* sysRef) {
-    (void)sysRef;
-    return true;
+    (void)sysRef;  // Unused parameter
+    
+    // Verify that our constants are valid
+    if (kMinBlockFrames <= 0 || kMaxBlockFrames <= kMinBlockFrames || 
+        kBlockFramesGranularity <= 0 || (kMinBlockFrames % kBlockFramesGranularity) != 0) {
+        strcpy(errorMessage, "Invalid buffer size constants");
+        return ASIOFalse;
+    }
+    
+    strcpy(errorMessage, "Driver initialized successfully");
+    return ASIOTrue;
 }
 
 ASIOError pwarASIO::start() {
@@ -156,6 +177,10 @@ ASIOError pwarASIO::stop() {
 }
 
 ASIOError pwarASIO::getChannels(long* numInputChannels, long* numOutputChannels) {
+    if (!numInputChannels || !numOutputChannels) {
+        strcpy(errorMessage, "Null pointer passed to getChannels");
+        return ASE_InvalidParameter;
+    }
     *numInputChannels = kNumInputs;
     *numOutputChannels = kNumOutputs;
     return ASE_OK;
@@ -168,8 +193,14 @@ ASIOError pwarASIO::getLatencies(long* _inputLatency, long* _outputLatency) {
 }
 
 ASIOError pwarASIO::getBufferSize(long* minSize, long* maxSize, long* preferredSize, long* granularity) {
-    *minSize = *maxSize = *preferredSize = kBlockFrames;
-    *granularity = 0;
+    if (!minSize || !maxSize || !preferredSize || !granularity) {
+        strcpy(errorMessage, "Null pointer passed to getBufferSize");
+        return ASE_InvalidParameter;
+    }
+    *minSize = kMinBlockFrames;
+    *maxSize = kMaxBlockFrames;
+    *preferredSize = kDefaultBlockFrames;
+    *granularity = kBlockFramesGranularity;
     return ASE_OK;
 }
 
@@ -188,7 +219,7 @@ ASIOError pwarASIO::setSampleRate(ASIOSampleRate sampleRate) {
         this->sampleRate = sampleRate;
         asioTime.timeInfo.sampleRate = sampleRate;
         asioTime.timeInfo.flags |= kSampleRateChanged;
-        milliSeconds = static_cast<long>((kBlockFrames * 1000) / this->sampleRate);
+        milliSeconds = static_cast<long>((blockFrames * 1000) / this->sampleRate);
         if (callbacks && callbacks->sampleRateDidChange)
             callbacks->sampleRateDidChange(this->sampleRate);
     }
@@ -227,13 +258,22 @@ ASIOError pwarASIO::getSamplePosition(ASIOSamples* sPos, ASIOTimeStamp* tStamp) 
 }
 
 ASIOError pwarASIO::getChannelInfo(ASIOChannelInfo* info) {
-    if (info->channel < 0 || (info->isInput ? info->channel >= kNumInputs : info->channel >= kNumOutputs))
+    if (!info) {
+        strcpy(errorMessage, "Null pointer passed to getChannelInfo");
         return ASE_InvalidParameter;
+    }
+    
+    if (info->channel < 0 || (info->isInput ? info->channel >= kNumInputs : info->channel >= kNumOutputs)) {
+        strcpy(errorMessage, "Channel index out of range");
+        return ASE_InvalidParameter;
+    }
+    
     info->type = ASIOSTFloat32LSB;
     info->channelGroup = 0;
     info->isActive = ASIOFalse;
+    
     if (info->isInput) {
-        strcpy(info->name, "Input ");
+        sprintf(info->name, "Input %ld", info->channel + 1);
         for (long i = 0; i < activeInputs; ++i) {
             if (inMap[i] == info->channel) {
                 info->isActive = ASIOTrue;
@@ -241,7 +281,7 @@ ASIOError pwarASIO::getChannelInfo(ASIOChannelInfo* info) {
             }
         }
     } else {
-        strcpy(info->name, "Output ");
+        sprintf(info->name, "Output %ld", info->channel + 1);
         for (long i = 0; i < activeOutputs; ++i) {
             if (outMap[i] == info->channel) {
                 info->isActive = ASIOTrue;
@@ -253,11 +293,40 @@ ASIOError pwarASIO::getChannelInfo(ASIOChannelInfo* info) {
 }
 
 ASIOError pwarASIO::createBuffers(ASIOBufferInfo* bufferInfos, long numChannels, long bufferSize, ASIOCallbacks* callbacks) {
+    if (!bufferInfos || !callbacks) {
+        strcpy(errorMessage, "Null pointer passed to createBuffers");
+        return ASE_InvalidParameter;
+    }
+    
+    if (numChannels <= 0 || numChannels > (kNumInputs + kNumOutputs)) {
+        strcpy(errorMessage, "Invalid number of channels");
+        return ASE_InvalidParameter;
+    }
+    
     ASIOBufferInfo* info = bufferInfos;
     bool notEnoughMem = false;
+    
+    // Validate buffer size
+    if (bufferSize < kMinBlockFrames || bufferSize > kMaxBlockFrames) {
+        strcpy(errorMessage, "Buffer size out of supported range");
+        return ASE_InvalidParameter;
+    }
+    
+    // Check if buffer size is aligned to granularity
+    if ((bufferSize % kBlockFramesGranularity) != 0) {
+        strcpy(errorMessage, "Buffer size not aligned to granularity");
+        return ASE_InvalidParameter;
+    }
+    
     activeInputs = 0;
     activeOutputs = 0;
     blockFrames = bufferSize;
+    
+    // Update latencies and timing based on new buffer size
+    inputLatency = blockFrames;
+    outputLatency = blockFrames * 2;
+    milliSeconds = static_cast<long>((blockFrames * 1000) / sampleRate);
+    
     for (long i = 0; i < numChannels; ++i, ++info) {
         if (info->isInput) {
             if (info->channelNum < 0 || info->channelNum >= kNumInputs)
@@ -324,21 +393,62 @@ error:
 }
 
 ASIOError pwarASIO::disposeBuffers() {
-    callbacks = nullptr;
+    // Stop audio processing first
     stop();
-    for (long i = 0; i < activeInputs; ++i)
-        delete[] inputBuffers[i];
+    
+    // Clear callbacks to prevent any more audio callbacks
+    callbacks = nullptr;
+    
+    // Clean up input buffers
+    for (long i = 0; i < activeInputs; ++i) {
+        if (inputBuffers[i]) {
+            delete[] inputBuffers[i];
+            inputBuffers[i] = nullptr;
+        }
+    }
     activeInputs = 0;
-    for (long i = 0; i < activeOutputs; ++i)
-        delete[] outputBuffers[i];
+    
+    // Clean up output buffers
+    for (long i = 0; i < activeOutputs; ++i) {
+        if (outputBuffers[i]) {
+            delete[] outputBuffers[i];
+            outputBuffers[i] = nullptr;
+        }
+    }
     activeOutputs = 0;
-    delete[] input_buffers;
-    delete[] output_buffers;
+    
+    // Clean up internal buffers
+    if (input_buffers) {
+        delete[] input_buffers;
+        input_buffers = nullptr;
+    }
+    if (output_buffers) {
+        delete[] output_buffers;
+        output_buffers = nullptr;
+    }
+    
     return ASE_OK;
 }
 
 ASIOError pwarASIO::controlPanel() {
-    return ASE_NotPresent;
+    // For now, we don't provide a control panel
+    // This could be extended to show buffer size settings
+    char msg[256];
+    sprintf(msg, "PWAR ASIO Driver v%d.%d.%d\n\n"
+                 "Current buffer size: %ld samples\n"
+                 "Supported range: %d - %d samples\n"
+                 "Granularity: %d samples\n\n"
+                 "Buffer size can be changed through your DAW's audio settings.",
+                 (getDriverVersion() >> 16) & 0xFF,
+                 (getDriverVersion() >> 8) & 0xFF,
+                 getDriverVersion() & 0xFF,
+                 blockFrames,
+                 kMinBlockFrames,
+                 kMaxBlockFrames,
+                 kBlockFramesGranularity);
+    
+    MessageBoxA(nullptr, msg, "PWAR ASIO Driver", MB_OK | MB_ICONINFORMATION);
+    return ASE_OK;
 }
 
 ASIOError pwarASIO::future(long selector, void* opt) {
@@ -597,4 +707,31 @@ void pwarASIO::closeUdpSender() {
         WSACleanup();
         udpWSAInitialized = false;
     }
+}
+
+// Dynamic buffer size support methods
+ASIOError pwarASIO::setBufferSize(long newBufferSize) {
+    if (!isValidBufferSize(newBufferSize)) {
+        strcpy(errorMessage, "Invalid buffer size");
+        return ASE_InvalidParameter;
+    }
+    
+    // Can't change buffer size while active
+    if (started) {
+        strcpy(errorMessage, "Cannot change buffer size while driver is active");
+        return ASE_NotPresent;  // Use standard ASIO error code
+    }
+    
+    blockFrames = newBufferSize;
+    inputLatency = blockFrames;
+    outputLatency = blockFrames * 2;
+    milliSeconds = static_cast<long>((blockFrames * 1000) / sampleRate);
+    
+    return ASE_OK;
+}
+
+bool pwarASIO::isValidBufferSize(long bufferSize) const {
+    return (bufferSize >= kMinBlockFrames && 
+            bufferSize <= kMaxBlockFrames && 
+            (bufferSize % kBlockFramesGranularity) == 0);
 }

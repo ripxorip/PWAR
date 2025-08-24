@@ -23,7 +23,10 @@
 #include "combase.h"
 #include "iasiodrv.h"
 
-constexpr int kBlockFrames = 128;
+constexpr int kMinBlockFrames = 64;
+constexpr int kMaxBlockFrames = 2048;
+constexpr int kDefaultBlockFrames = 128;
+constexpr int kBlockFramesGranularity = 64;
 constexpr int kNumInputs = 1;
 constexpr int kNumOutputs = 2;
 
@@ -59,6 +62,10 @@ public:
     ASIOError future(long selector, void* opt);
     ASIOError outputReady();
     long getMilliSeconds() const { return milliSeconds; }
+    
+    // Dynamic buffer size support
+    ASIOError setBufferSize(long newBufferSize);
+    bool isValidBufferSize(long bufferSize) const;
 
 private:
     pwar_router_t router;
