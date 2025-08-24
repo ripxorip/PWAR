@@ -19,7 +19,11 @@
 #include <sstream>
 #include "pwarASIO.h"
 #include "pwarASIOLog.h"
+
 #include "../../protocol/pwar_packet.h"
+#include "../../protocol/pwar_router.h"
+#include "../../protocol/latency_manager.h"
+
 #include <avrt.h>
 #pragma comment(lib, "ws2_32.lib")
 #pragma comment(lib, "avrt.lib")
@@ -27,6 +31,8 @@
 #ifndef SIO_UDP_CONNRESET
 #define SIO_UDP_CONNRESET _WSAIOW(IOC_VENDOR,12)
 #endif
+
+#define PWAR_MAX_CHANNELS 2
 
 static constexpr double TWO_RAISED_TO_32 = 4294967296.0;
 static constexpr double TWO_RAISED_TO_32_RECIP = 1.0 / TWO_RAISED_TO_32;
@@ -296,6 +302,11 @@ error:
         return ASE_NoMemory;
     }
     this->callbacks = callbacks;
+    // Initialize the router with the number of output channels
+    pwar_router_init(&router, PWAR_MAX_CHANNELS);
+    input_buffers = new float[PWAR_MAX_CHANNELS * blockFrames];
+    output_buffers = new float[PWAR_MAX_CHANNELS * blockFrames];
+
     if (callbacks->asioMessage(kAsioSupportsTimeInfo, 0, 0, 0)) {
         timeInfoMode = true;
         asioTime.timeInfo.speed = 1.0;
@@ -321,6 +332,8 @@ ASIOError pwarASIO::disposeBuffers() {
     for (long i = 0; i < activeOutputs; ++i)
         delete[] outputBuffers[i];
     activeOutputs = 0;
+    delete[] input_buffers;
+    delete[] output_buffers;
     return ASE_OK;
 }
 
@@ -340,45 +353,16 @@ ASIOError pwarASIO::future(long selector, void* opt) {
     return ASE_NotPresent;
 }
 
-void pwarASIO::output(const rt_stream_packet_t& packet) {
+void pwarASIO::output(const pwar_packet_t& packet) {
     if (udpSendSocket != INVALID_SOCKET) {
         WSABUF buffer;
-        buffer.buf = reinterpret_cast<CHAR*>(const_cast<rt_stream_packet_t*>(&packet));
-        buffer.len = sizeof(rt_stream_packet_t);
+        buffer.buf = reinterpret_cast<CHAR*>(const_cast<pwar_packet_t*>(&packet));
+        buffer.len = sizeof(pwar_packet_t);
         DWORD bytesSent = 0;
         int flags = 0;
         WSASendTo(udpSendSocket, &buffer, 1, &bytesSent, flags,
                   reinterpret_cast<sockaddr*>(&udpSendAddr), sizeof(udpSendAddr), NULL, NULL);
     }
-}
-
-void pwarASIO::switchBuffersFromPwarPacket(const rt_stream_packet_t& packet) {
-    size_t to_copy = (blockFrames < packet.n_samples) ? blockFrames : packet.n_samples;
-    for (long i = 0; i < activeInputs; ++i) {
-        float* dest = inputBuffers[i] + (toggle ? blockFrames : 0);
-        memcpy(dest, packet.samples_ch1, to_copy * sizeof(float));
-        for (size_t j = to_copy; j < blockFrames; ++j)
-            dest[j] = 0.0f;
-    }
-    rt_stream_packet_t out_packet;
-    out_packet.ts_pipewire_send = packet.ts_pipewire_send;
-    samplePosition += blockFrames;
-    if (timeInfoMode) {
-        bufferSwitchX();
-    } else {
-        callbacks->bufferSwitch(toggle, ASIOFalse);
-    }
-    float* outputSamplesCh1 = outputBuffers[0] + (toggle ? blockFrames : 0);
-    float* outputSamplesCh2 = outputBuffers[1] + (toggle ? blockFrames : 0);
-    out_packet.n_samples = blockFrames;
-    memcpy(out_packet.samples_ch1, outputSamplesCh1, out_packet.n_samples * sizeof(float));
-    memcpy(out_packet.samples_ch2, outputSamplesCh2, out_packet.n_samples * sizeof(float));
-    out_packet.seq = packet.seq;
-    uint64_t nowNs = std::chrono::duration_cast<std::chrono::nanoseconds>(
-        std::chrono::high_resolution_clock::now().time_since_epoch()).count();
-    out_packet.ts_asio_send = (nowNs - _timestamp) + packet.ts_pipewire_send;
-    output(out_packet);
-    toggle = toggle ? 0 : 1;
 }
 
 void pwarASIO::bufferSwitchX() {
@@ -448,6 +432,8 @@ void pwarASIO::udp_packet_listener() {
         return;
     }
     udpListenerRunning = true;
+    pwar_packet_t output_packets[32];
+    uint32_t packets_to_send = 0;
     while (udpListenerRunning) {
         len = sizeof(cliaddr);
         WSABUF wsaBuf;
@@ -456,13 +442,74 @@ void pwarASIO::udp_packet_listener() {
         DWORD bytesReceived = 0;
         DWORD flags = 0;
         int res = WSARecvFrom(sockfd, &wsaBuf, 1, &bytesReceived, &flags, reinterpret_cast<sockaddr*>(&cliaddr), &len, NULL, NULL);
-        if (res == 0 && bytesReceived >= sizeof(rt_stream_packet_t)) {
-            rt_stream_packet_t pkt;
-            memcpy(&pkt, buffer, sizeof(rt_stream_packet_t));
-            _timestamp = std::chrono::duration_cast<std::chrono::nanoseconds>(
-                std::chrono::high_resolution_clock::now().time_since_epoch()).count();
-            if (started) {
-                switchBuffersFromPwarPacket(pkt);
+        if (res == 0 && bytesReceived >= sizeof(pwar_packet_t)) {
+            pwar_packet_t pkt;
+            memcpy(&pkt, buffer, sizeof(pwar_packet_t));
+
+            uint32_t chunk_size = pkt.n_samples;
+            pkt.num_packets =  blockFrames / chunk_size;
+            latency_manager_process_packet_client(&pkt);
+
+            int samples_ready = pwar_router_process_streaming_packet(&router, &pkt, input_buffers, blockFrames, PWAR_MAX_CHANNELS);
+
+            if (started && (samples_ready > 0)) {
+                uint32_t seq = pkt.seq;
+
+                latency_manager_start_audio_cbk_begin();
+
+                // Do the ASIO things.. input in input_buffers
+                size_t to_copy = blockFrames;
+
+                for (long i = 0; i < activeInputs; ++i) {
+                    float* dest = inputBuffers[i] + (toggle ? blockFrames : 0);
+
+                    // Copy the first input channel..
+                    memcpy(dest, input_buffers, to_copy * sizeof(float));
+
+                    // Zero out the rest
+                    for (size_t j = to_copy; j < blockFrames; ++j)
+                        dest[j] = 0.0f;
+                }
+                samplePosition += blockFrames;
+
+                if (timeInfoMode) {
+                    bufferSwitchX();
+                } else {
+                    callbacks->bufferSwitch(toggle, ASIOFalse);
+                }
+
+                latency_manager_start_audio_cbk_end();
+
+                float* outputSamplesCh1 = outputBuffers[0] + (toggle ? blockFrames : 0);
+                float* outputSamplesCh2 = outputBuffers[1] + (toggle ? blockFrames : 0);
+
+                memcpy(output_buffers, outputSamplesCh1, blockFrames * sizeof(float));
+                memcpy(output_buffers + blockFrames, outputSamplesCh2, blockFrames * sizeof(float));
+
+                // Send the result
+                pwar_router_send_buffer(&router, chunk_size, output_buffers, samples_ready, PWAR_MAX_CHANNELS, output_packets, 32, &packets_to_send);
+
+                uint64_t timestamp = latency_manager_timestamp_now();
+                for (uint32_t i = 0; i < packets_to_send; ++i) {
+                    output_packets[i].seq = seq;
+                    output_packets[i].timestamp = timestamp;
+                    output(output_packets[i]);
+                }
+                toggle = toggle ? 0 : 1;
+
+                pwar_latency_info_t latency_info;
+                if (latency_manager_time_for_sending_latency_info(&latency_info)) {
+                    // Send the latency info over the socket
+                    if (udpSendSocket != INVALID_SOCKET) {
+                        WSABUF buffer;
+                        buffer.buf = reinterpret_cast<CHAR*>(&latency_info);
+                        buffer.len = sizeof(latency_info);
+                        DWORD bytesSent = 0;
+                        int flags = 0;
+                        WSASendTo(udpSendSocket, &buffer, 1, &bytesSent, flags,
+                                  reinterpret_cast<sockaddr*>(&udpSendAddr), sizeof(udpSendAddr), NULL, NULL);
+                    }
+                }
             }
         }
     }

@@ -5,8 +5,13 @@
  * This file is part of the PipeWire ASIO Relay (PWAR) project.
  */
 
+
 #ifndef PWAR_ROUTER
 #define PWAR_ROUTER
+
+#ifdef __cplusplus
+extern "C" {
+#endif
 
 #include <stdint.h>
 #include "pwar_packet.h"
@@ -43,4 +48,7 @@ int pwar_router_process_streaming_packet(pwar_router_t *router, pwar_packet_t *i
 // packets_to_send: output, set to the number of packets generated from the input samples
 int pwar_router_send_buffer(pwar_router_t *router, uint32_t chunk_size, float *samples, uint32_t n_samples, uint32_t channel_count, pwar_packet_t *packets, const uint32_t packet_count, uint32_t *packets_to_send);
 
+#ifdef __cplusplus
+}
+#endif
 #endif /* PWAR_ROUTER */

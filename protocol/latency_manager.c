@@ -1,10 +1,11 @@
 #include "latency_manager.h"
+#include <stdio.h>
 
 #ifdef __linux__
 #include <time.h>
-#include <stdio.h>
 #elif defined(_WIN32)
 #include <windows.h>
+#define WIN32_LEAN_AND_MEAN
 #endif
 
 typedef struct {
@@ -205,11 +206,11 @@ uint64_t latency_manager_timestamp_now() {
     struct timespec ts;
     clock_gettime(CLOCK_MONOTONIC, &ts);
     return (uint64_t)ts.tv_sec * 1000000000 + ts.tv_nsec;
-
 #elif defined(_WIN32)
-    uint64_t nowNs = std::chrono::duration_cast<std::chrono::nanoseconds>(
-        std::chrono::high_resolution_clock::now().time_since_epoch()).count();
-    return nowNs;
+    LARGE_INTEGER freq, counter;
+    QueryPerformanceFrequency(&freq);
+    QueryPerformanceCounter(&counter);
+    return (uint64_t)((counter.QuadPart * 1000000000ULL) / freq.QuadPart);
 #endif
 }
 

@@ -1,5 +1,10 @@
+
 #ifndef LATENCY_MANAGER
 #define LATENCY_MANAGER
+
+#ifdef __cplusplus
+extern "C" {
+#endif
 
 #include <stdint.h>
 #include "pwar_packet.h"
@@ -22,4 +27,7 @@ void latency_manager_get_current_metrics(pwar_latency_metrics_t *metrics);
 
 void latency_manager_report_xrun();
 
+#ifdef __cplusplus
+}
+#endif
 #endif /* LATENCY_MANAGER */

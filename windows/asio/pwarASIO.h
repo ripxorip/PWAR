@@ -12,6 +12,7 @@
 #include <thread>
 #include <string>
 #include "../../protocol/pwar_packet.h"
+#include "../../protocol/pwar_router.h"
 
 #include "rpc.h"
 #include "rpcndr.h"
@@ -60,15 +61,18 @@ public:
     long getMilliSeconds() const { return milliSeconds; }
 
 private:
-    void output(const rt_stream_packet_t& packet);
+    pwar_router_t router;
+    void output(const pwar_packet_t& packet);
     void bufferSwitchX();
-    void switchBuffersFromPwarPacket(const rt_stream_packet_t& packet);
     void udp_packet_listener();
     void startUdpListener();
     void stopUdpListener();
     void initUdpSender();
     void closeUdpSender();
     void parseConfigFile();
+
+    float *output_buffers;
+    float *input_buffers;
 
     double samplePosition;
     double sampleRate;
