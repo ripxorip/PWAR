@@ -44,7 +44,20 @@
           pipewire.dev
           qt5.full
           qt5.wrapQtAppsHook
+          # Package building tools
+          nfpm
+          gnumake
         ];
+
+        shellHook = ''
+          echo "PWAR Development Environment"
+          echo "Commands available:"
+          echo "  nix build .#pwar       - Build full package"
+          echo "  nix build .#pwar-cli   - Build CLI-only package"  
+          echo "  nix run .#pwar         - Run GUI"
+          echo "  nix run .#pwar-cli     - Run CLI"
+          echo "  make -f Makefile.packages packages - Build DEB/RPM packages"
+        '';
       };
       
       packages = {
