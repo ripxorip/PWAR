@@ -32,7 +32,7 @@
       devShell = pkgs.mkShell {
         buildInputs = with pkgs; [
           gcc
-          meson
+          cmake
           ninja
           check
           pkg-config
