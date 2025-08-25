@@ -12,10 +12,12 @@ license: "GPL-3.0-or-later"
 
 depends:
   - libpipewire-0.3-0
-  - libqt5core5a
-  - libqt5widgets5
-  - libqt5quick5
-  - libqt5qml5
+  - qtbase5-dev
+  - qtdeclarative5-dev
+  - qml-module-qtquick2
+  - qml-module-qtquick-controls2
+  - qml-module-qtquick-layouts
+  - qml-module-qtgraphicaleffects
 
 recommends:
   - pipewire
@@ -64,10 +66,12 @@ overrides:
   deb:
     depends:
       - libpipewire-0.3-0
-      - libqt5core5a
-      - libqt5widgets5
-      - libqt5quick5
-      - libqt5qml5
+      - qtbase5-dev
+      - qtdeclarative5-dev
+      - qml-module-qtquick2
+      - qml-module-qtquick-controls2
+      - qml-module-qtquick-layouts
+      - qml-module-qtgraphicaleffects
     
   rpm:
     depends:
