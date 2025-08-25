@@ -5,7 +5,9 @@
 install-nfpm:
 	@if ! command -v nfpm >/dev/null 2>&1; then \
 		echo "Installing nFPM..."; \
-		curl -sfL https://goreleaser.com/static/run | bash -s -- install github.com/goreleaser/nfpm/v2/cmd/nfpm; \
+		echo 'deb [trusted=yes] https://repo.goreleaser.com/apt/ /' | sudo tee /etc/apt/sources.list.d/goreleaser.list; \
+		sudo apt update; \
+		sudo apt install nfpm; \
 	fi
 
 # Build binaries first
