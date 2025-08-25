@@ -2,10 +2,10 @@ name: Build and Package PWAR
 
 on:
   push:
-    branches: [ "*" ]  # Run on ALL branches for now
+    # branches: [ "*" ]  # Commented out - only run on releases for now
     tags: [ 'v*' ]
-  pull_request:
-    branches: [ "*" ]
+  # pull_request:
+  #   branches: [ "*" ]  # Commented out - only run on releases for now
 
 env:
   BUILD_TYPE: Release
@@ -65,25 +65,19 @@ jobs:
         fi
 
     - name: Build packages
+      if: startsWith(github.ref, 'refs/tags/')
       run: |
         mkdir -p dist
-        nfpm package --packager deb --target dist/pwar_${{ github.sha }}.deb --config nfpm.yaml
-        nfpm package --packager rpm --target dist/pwar_${{ github.sha }}.rpm --config nfpm.yaml
-        
-        # Create version-tagged packages for tags
-        if [[ $GITHUB_REF == refs/tags/* ]]; then
-          VERSION=${GITHUB_REF#refs/tags/}
-          cp dist/pwar_${{ github.sha }}.deb dist/pwar_${VERSION}.deb
-          cp dist/pwar_${{ github.sha }}.rpm dist/pwar_${VERSION}.rpm
-        fi
+        VERSION=${GITHUB_REF#refs/tags/}
+        nfpm package --packager deb --target dist/pwar_${VERSION}.deb --config nfpm.yaml
 
     - name: Upload build artifacts
+      if: startsWith(github.ref, 'refs/tags/')
       uses: actions/upload-artifact@v4
       with:
         name: linux-packages
         path: |
           dist/*.deb
-          dist/*.rpm
           build/linux/pwar_cli
           build/linux/pwar_gui
           build/linux/libpwar.so
@@ -109,7 +103,6 @@ jobs:
       with:
         files: |
           ./artifacts/*.deb
-          ./artifacts/*.rpm
         generate_release_notes: true
         draft: false
         prerelease: ${{ contains(github.ref, 'alpha') || contains(github.ref, 'beta') || contains(github.ref, 'rc') }}
