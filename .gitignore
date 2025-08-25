@@ -1,5 +1,11 @@
 build/
+install/
+dist/
 third_party/asiosdk
 .ccls-cache/
 linux/_out
+protocol/test/_out/
 .vscode/
+.direnv/
+.envrc
+result

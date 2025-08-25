@@ -16,8 +16,10 @@
 static int recv_sockfd;
 static pthread_mutex_t packet_mutex = PTHREAD_MUTEX_INITIALIZER;
 static pthread_cond_t packet_cond = PTHREAD_COND_INITIALIZER;
-static rt_stream_packet_t latest_packet;
+static pwar_packet_t latest_packet;
 static int packet_available = 0;
+
+#define RT_STREAM_PACKET_FRAME_SIZE 128 // Define the frame size for the torture test
 
 static void setup_recv_socket(int port) {
     recv_sockfd = socket(AF_INET, SOCK_DGRAM, 0);
@@ -41,7 +43,7 @@ static void setup_recv_socket(int port) {
 static void *receiver_thread(void *userdata) {
     struct sched_param sp = { .sched_priority = 90 };
     pthread_setschedparam(pthread_self(), SCHED_FIFO, &sp);
-    rt_stream_packet_t packet;
+    pwar_packet_t packet;
     while (1) {
         ssize_t n = recvfrom(recv_sockfd, &packet, sizeof(packet), 0, NULL, NULL);
         if (n == (ssize_t)sizeof(packet)) {
@@ -71,16 +73,15 @@ int main() {
 
     uint64_t seq = 0;
     while (1) {
-        rt_stream_packet_t packet;
-        packet.n_samples = RT_STREAM_PACKET_FRAME_SIZE/2;
+        pwar_packet_t packet;
+        packet.n_samples = RT_STREAM_PACKET_FRAME_SIZE;
         packet.seq = seq++;
         struct timespec ts;
         clock_gettime(CLOCK_MONOTONIC, &ts);
-        packet.ts_pipewire_send = (uint64_t)ts.tv_sec * 1000000000 + ts.tv_nsec;
-        packet.ts_asio_send = 0;
+        packet.timestamp = (uint64_t)ts.tv_sec * 1000000000 + ts.tv_nsec;
         for (int i = 0; i < RT_STREAM_PACKET_FRAME_SIZE/2; ++i) {
-            packet.samples_ch1[i] = (float)i;
-            packet.samples_ch2[i] = (float)(RT_STREAM_PACKET_FRAME_SIZE/2 - i);
+            packet.samples[0][i] = (float)i;
+            packet.samples[1][i] = (float)(RT_STREAM_PACKET_FRAME_SIZE - i);
         }
         ssize_t sent = sendto(sockfd, &packet, sizeof(packet), 0, (struct sockaddr *)&servaddr, sizeof(servaddr));
         if (sent != sizeof(packet)) {

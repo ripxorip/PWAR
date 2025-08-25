@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="media/pwar_logo_round.png" alt="PWAR Logo" width="300"">
+</p>
+
 # PWAR: PipeWire ASIO Relay
 
 🎵 **PWAR (PipeWire ASIO Relay)** is a zero-drift, real-time audio bridge between Windows ASIO hosts and Linux PipeWire. It enables ultra-low-latency audio streaming across platforms, making it ideal for musicians, streamers, and audio professionals.
@@ -26,15 +30,16 @@
    udp_send_ip=192.168.66.2
    ```
    Replace with your Linux server's IP.
-5. 🐧 **Build the Linux binary:**
+5. 🐧 **Build the Linux binaries:**
    ```sh
    nix develop
-   make
+   meson setup build
+   ninja -C build
    ```
-   The binary will be at `linux/_out/pwarPipeWire`.
+   The binaries will be in `linux/build/`.
 6. 🔗 **Run the Linux relay:**
    ```sh
-   ./linux/pwarPipeWire --ip 192.168.66.3
+   ./linux/build/pwarPipeWire --ip 192.168.66.3
    ```
    Replace `192.168.66.3` with the Windows ASIO host's IP.
 
@@ -77,14 +82,24 @@
    ```
 5. The ASIO driver DLL will be in `build/windows/asio/PWARASIO.dll`.
 
-### 🐧 Linux (Nix + Makefile)
+### 🐧 Linux (Nix + Meson)
 1. Install [Nix](https://nixos.org/download.html).
-2. Build using the provided flake in the linux directory:
+2. Build using the provided flake and Meson build system:
    ```sh
    nix develop
-   make
+   meson setup build
+   ninja -C build
    ```
-3. The binary will be in `linux/_out/pwarPipeWire`.
+3. The binaries will be in `linux/build/` (e.g., `pwar`, `pwar_torture`, `windows_sim`).
+
+#### 🧪 Protocol Unit Tests
+To build protocol unit tests:
+```sh
+cd protocol/test
+meson setup build
+ninja -C build
+```
+Test binaries will be in `protocol/test/build/`.
 
 ---
 
@@ -113,7 +128,7 @@ Replace with your actual Linux server's IP.
 
 On your Linux machine, run:
 ```sh
-./linux/pwarPipeWire --ip 192.168.66.3
+./linux/build/pwarPipeWire --ip 192.168.66.3
 ```
 Replace `192.168.66.3` with the IP address of the Windows ASIO host to stream to.
 
@@ -132,6 +147,17 @@ Replace `192.168.66.3` with the IP address of the Windows ASIO host to stream to
 - **Package binaries for major Linux distributions + Windows ASIO Binary**: Simplifies installation and usage.
 - **Add a cross-platform GUI**: Improves usability and configuration.
 - **Reduce jitter for VM setups**: Explore virtio-vsock or ivshmem for inter-VM shared memory, bypassing the network stack for lower latency and jitter.
+
+---
+
+## 💖 Support the Project
+
+PWAR is free and open source. If you find it useful, consider supporting its development:
+
+[<img src="https://storage.ko-fi.com/cdn/kofi3.png?v=3" alt="Ko-fi" height="32" />](https://ko-fi.com/ripxorip)
+[<img src="https://raw.githubusercontent.com/simple-icons/simple-icons/develop/icons/githubsponsors.svg" alt="GitHub Sponsors" height="32" />](https://github.com/sponsors/ripxorip)
+
+Every bit helps me keep improving PWAR — thank you! 🙏
 
 ---
 

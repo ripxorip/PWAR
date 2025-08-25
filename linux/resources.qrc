@@ -1,0 +1,8 @@
+<!DOCTYPE RCC>
+<RCC version="1.0">
+    <qresource>
+        <file alias="pwar_gui.qml">pwar_gui.qml</file>
+        <file alias="icon.png">../media/pwar_icon_256x256.png</file>
+        <file alias="logo_round.png">../media/pwar_logo_round.png</file>
+    </qresource>
+</RCC>

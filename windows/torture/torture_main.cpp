@@ -75,11 +75,11 @@ void udp_receive_thread() {
     while (running) {
         len = sizeof(cliaddr);
         int bytesReceived = recvfrom(sockfd, buffer, sizeof(buffer), 0, reinterpret_cast<sockaddr*>(&cliaddr), &len);
-        if (bytesReceived >= (int)sizeof(rt_stream_packet_t)) {
-            rt_stream_packet_t pkt;
-            memcpy(&pkt, buffer, sizeof(rt_stream_packet_t));
+        if (bytesReceived >= (int)sizeof(pwar_packet_t)) {
+            pwar_packet_t pkt;
+            memcpy(&pkt, buffer, sizeof(pwar_packet_t));
             // Respond with the same seq
-            rt_stream_packet_t resp = pkt;
+            pwar_packet_t resp = pkt;
             sendto(send_sock, reinterpret_cast<const char*>(&resp), sizeof(resp), 0,
                    reinterpret_cast<sockaddr*>(&dest_addr), sizeof(dest_addr));
         }

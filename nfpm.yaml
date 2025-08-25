@@ -1,0 +1,81 @@
+name: "pwar"
+arch: "amd64"
+platform: "linux"
+version: "v0.1.0"
+section: "sound"
+priority: "optional"
+maintainer: "ripxorip@gmail.com"
+description: "PipeWire ASIO Relay - Zero-drift, real-time audio bridge"
+vendor: "PWAR Project"
+homepage: "https://github.com/ripxorip/PWAR"
+license: "GPL-3.0-or-later"
+
+depends:
+  - libpipewire-0.3-0
+  - qtbase5-dev
+  - qtdeclarative5-dev
+  - qml-module-qtquick2
+  - qml-module-qtquick-controls2
+  - qml-module-qtquick-layouts
+  - qml-module-qtgraphicaleffects
+
+recommends:
+  - pipewire
+  - pipewire-pulse
+
+contents:
+  # Binaries
+  - src: "./build/linux/pwar_cli"
+    dst: "/usr/bin/pwar_cli"
+    file_info:
+      mode: 0755
+  
+  - src: "./build/linux/pwar_gui"
+    dst: "/usr/bin/pwar_gui"
+    file_info:
+      mode: 0755
+  
+  - src: "./build/linux/libpwar.so"
+    dst: "/usr/lib/libpwar.so"
+    file_info:
+      mode: 0644
+  
+  # QML files
+  - src: "./linux/pwar_gui.qml"
+    dst: "/usr/share/pwar/pwar_gui.qml"
+    file_info:
+      mode: 0644
+  
+  # Desktop file
+  - src: "./linux/pwar.desktop"
+    dst: "/usr/share/applications/pwar.desktop"
+    file_info:
+      mode: 0644
+  
+  # Icon
+  - src: "./media/pwar_icon_256x256.png"
+    dst: "/usr/share/icons/hicolor/256x256/apps/pwar.png"
+    file_info:
+      mode: 0644
+
+scripts:
+  postinstall: ./scripts/postinstall.sh
+  preremove: ./scripts/preremove.sh
+
+overrides:
+  deb:
+    depends:
+      - libpipewire-0.3-0
+      - qtbase5-dev
+      - qtdeclarative5-dev
+      - qml-module-qtquick2
+      - qml-module-qtquick-controls2
+      - qml-module-qtquick-layouts
+      - qml-module-qtgraphicaleffects
+    
+  rpm:
+    depends:
+      - pipewire-devel
+      - qt5-qtbase
+      - qt5-qtdeclarative
+      - qt5-qtquickcontrols2

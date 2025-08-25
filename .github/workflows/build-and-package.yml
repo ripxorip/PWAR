@@ -1,0 +1,73 @@
+name: Build and Package PWAR
+
+on:
+  push:
+    # branches: [ "*" ]  # Commented out - only run on releases for now
+    tags: [ 'v*' ]
+  # pull_request:
+  #   branches: [ "*" ]  # Commented out - only run on releases for now
+
+env:
+  BUILD_TYPE: Release
+
+jobs:
+  build-and-release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Install dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y \
+          build-essential \
+          cmake \
+          ninja-build \
+          libpipewire-0.3-dev \
+          qtbase5-dev \
+          qtdeclarative5-dev \
+          qml-module-qtquick2 \
+          qml-module-qtquick-controls2 \
+          qml-module-qtquick-layouts \
+          qml-module-qtgraphicaleffects
+
+    - name: Install nFPM
+      run: |
+        echo 'deb [trusted=yes] https://repo.goreleaser.com/apt/ /' | sudo tee /etc/apt/sources.list.d/goreleaser.list
+        sudo apt update
+        sudo apt install nfpm
+
+    - name: Configure CMake
+      run: cmake -B build -S . -DCMAKE_BUILD_TYPE=${{env.BUILD_TYPE}} -G Ninja
+
+    - name: Build
+      run: cmake --build build --parallel
+
+    - name: Test (if tests exist)
+      working-directory: build
+      run: |
+        if [ -f "CTestTestfile.cmake" ]; then
+          ctest --output-on-failure
+        else
+          echo "No tests found, skipping test step"
+        fi
+
+    - name: Build DEB package
+      run: |
+        mkdir -p dist
+        VERSION=${GITHUB_REF#refs/tags/}
+        nfpm package --packager deb --target dist/pwar_${VERSION}.deb --config nfpm.yaml
+
+    - name: Create Release
+      uses: softprops/action-gh-release@v1
+      with:
+        files: dist/*.deb
+        generate_release_notes: true
+        draft: false
+        prerelease: ${{ contains(github.ref, 'alpha') || contains(github.ref, 'beta') || contains(github.ref, 'rc') }}
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

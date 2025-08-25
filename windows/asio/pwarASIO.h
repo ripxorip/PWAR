@@ -12,6 +12,7 @@
 #include <thread>
 #include <string>
 #include "../../protocol/pwar_packet.h"
+#include "../../protocol/pwar_router.h"
 
 #include "rpc.h"
 #include "rpcndr.h"
@@ -22,7 +23,10 @@
 #include "combase.h"
 #include "iasiodrv.h"
 
-constexpr int kBlockFrames = 128;
+constexpr int kMinBlockFrames = 64;
+constexpr int kMaxBlockFrames = 2048;
+constexpr int kDefaultBlockFrames = 128;
+constexpr int kBlockFramesGranularity = 64;
 constexpr int kNumInputs = 1;
 constexpr int kNumOutputs = 2;
 
@@ -58,17 +62,24 @@ public:
     ASIOError future(long selector, void* opt);
     ASIOError outputReady();
     long getMilliSeconds() const { return milliSeconds; }
+    
+    // Dynamic buffer size support
+    ASIOError setBufferSize(long newBufferSize);
+    bool isValidBufferSize(long bufferSize) const;
 
 private:
-    void output(const rt_stream_packet_t& packet);
+    pwar_router_t router;
+    void output(const pwar_packet_t& packet);
     void bufferSwitchX();
-    void switchBuffersFromPwarPacket(const rt_stream_packet_t& packet);
     void udp_packet_listener();
     void startUdpListener();
     void stopUdpListener();
     void initUdpSender();
     void closeUdpSender();
     void parseConfigFile();
+
+    float *output_buffers;
+    float *input_buffers;
 
     double samplePosition;
     double sampleRate;

@@ -10,6 +10,8 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(PWARASIO_SOURCES
     pwarASIO.cpp
     pwarASIOLog.cpp
+    ../../../protocol/pwar_router.c
+    ../../../protocol/latency_manager.c
     ../../../third_party/asiosdk/common/combase.cpp
     ../../../third_party/asiosdk/common/dllentry.cpp
     ../../../third_party/asiosdk/common/register.cpp

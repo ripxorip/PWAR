@@ -1,0 +1,11 @@
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=PWAR
+Comment=Professional Wireless Audio Router
+Exec=pwar_gui
+Icon=pwar
+Terminal=false
+Categories=AudioVideo;Audio;
+StartupNotify=true
+MimeType=
