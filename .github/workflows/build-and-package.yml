@@ -1,0 +1,165 @@
+name: Build and Package PWAR
+
+on:
+  push:
+    branches: [ "*" ]  # Run on ALL branches for now
+    tags: [ 'v*' ]
+  pull_request:
+    branches: [ "*" ]
+
+env:
+  BUILD_TYPE: Release
+
+jobs:
+  build-linux:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Install dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y \
+          build-essential \
+          cmake \
+          ninja-build \
+          libpipewire-0.3-dev \
+          qtbase5-dev \
+          qtdeclarative5-dev \
+          qml-module-qtquick2 \
+          qml-module-qtquick-controls2 \
+          qml-module-qtquick-layouts \
+          qml-module-qtgraphicaleffects
+
+    - name: Cache CMake build
+      uses: actions/cache@v4
+      with:
+        path: |
+          build
+          ~/.cache/cmake
+        key: ${{ runner.os }}-cmake-${{ hashFiles('**/CMakeLists.txt') }}
+        restore-keys: |
+          ${{ runner.os }}-cmake-
+
+    - name: Install nFPM
+      run: |
+        curl -sfL https://goreleaser.com/static/run | bash -s -- install github.com/goreleaser/nfpm/v2/cmd/nfpm
+
+    - name: Configure CMake
+      run: cmake -B build -S . -DCMAKE_BUILD_TYPE=${{env.BUILD_TYPE}} -G Ninja
+
+    - name: Build
+      run: cmake --build build --parallel
+
+    - name: Test (if tests exist)
+      working-directory: build
+      run: |
+        if [ -f "CTestTestfile.cmake" ]; then
+          ctest --output-on-failure
+        else
+          echo "No tests found, skipping test step"
+        fi
+
+    - name: Build packages
+      run: |
+        mkdir -p dist
+        nfpm package --packager deb --target dist/pwar_${{ github.sha }}.deb --config nfpm.yaml
+        nfpm package --packager rpm --target dist/pwar_${{ github.sha }}.rpm --config nfpm.yaml
+        
+        # Create version-tagged packages for tags
+        if [[ $GITHUB_REF == refs/tags/* ]]; then
+          VERSION=${GITHUB_REF#refs/tags/}
+          cp dist/pwar_${{ github.sha }}.deb dist/pwar_${VERSION}.deb
+          cp dist/pwar_${{ github.sha }}.rpm dist/pwar_${VERSION}.rpm
+        fi
+
+    - name: Upload build artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: pwar-build-${{ github.sha }}
+        path: |
+          dist/*.deb
+          dist/*.rpm
+          build/linux/pwar_cli
+          build/linux/pwar_gui
+          build/linux/libpwar.so
+        retention-days: 30
+
+  # Create release for tags
+  release:
+    if: startsWith(github.ref, 'refs/tags/')
+    needs: build-linux
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    
+    steps:
+    - name: Download artifacts
+      uses: actions/download-artifact@v4
+      with:
+        name: linux-packages
+        path: ./artifacts
+
+    - name: Create Release
+      uses: softprops/action-gh-release@v1
+      with:
+        files: |
+          ./artifacts/*.deb
+          ./artifacts/*.rpm
+        generate_release_notes: true
+        draft: false
+        prerelease: ${{ contains(github.ref, 'alpha') || contains(github.ref, 'beta') || contains(github.ref, 'rc') }}
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # Optional: Build for multiple distributions
+  build-matrix:
+    if: startsWith(github.ref, 'refs/tags/') # Only run for releases
+    strategy:
+      matrix:
+        os: [ubuntu-20.04, ubuntu-22.04]
+    runs-on: ${{ matrix.os }}
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Install dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y \
+          build-essential \
+          cmake \
+          ninja-build \
+          libpipewire-0.3-dev \
+          qtbase5-dev \
+          qtdeclarative5-dev \
+          qml-module-qtquick2 \
+          qml-module-qtquick-controls2 \
+          qml-module-qtquick-layouts \
+          qml-module-qtgraphicaleffects
+
+    - name: Install nFPM
+      run: |
+        curl -sfL https://goreleaser.com/static/run | bash -s -- install github.com/goreleaser/nfpm/v2/cmd/nfpm
+
+    - name: Configure and Build
+      run: |
+        cmake -B build -S . -DCMAKE_BUILD_TYPE=${{env.BUILD_TYPE}} -G Ninja
+        cmake --build build --parallel
+
+    - name: Build packages
+      run: |
+        mkdir -p dist
+        VERSION=${GITHUB_REF#refs/tags/}
+        OS_VERSION=$(lsb_release -rs | tr -d '.')
+        nfpm package --packager deb --target dist/pwar_${VERSION}_ubuntu${OS_VERSION}.deb --config nfpm.yaml
+
+    - name: Upload distribution-specific packages
+      uses: actions/upload-artifact@v4
+      with:
+        name: packages-${{ matrix.os }}
+        path: dist/*.deb
+        retention-days: 30
