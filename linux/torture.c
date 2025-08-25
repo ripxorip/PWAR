@@ -78,8 +78,7 @@ int main() {
         packet.seq = seq++;
         struct timespec ts;
         clock_gettime(CLOCK_MONOTONIC, &ts);
-        packet.ts_pipewire_send = (uint64_t)ts.tv_sec * 1000000000 + ts.tv_nsec;
-        packet.ts_asio_send = 0;
+        packet.timestamp = (uint64_t)ts.tv_sec * 1000000000 + ts.tv_nsec;
         for (int i = 0; i < RT_STREAM_PACKET_FRAME_SIZE/2; ++i) {
             packet.samples[0][i] = (float)i;
             packet.samples[1][i] = (float)(RT_STREAM_PACKET_FRAME_SIZE - i);

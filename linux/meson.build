@@ -12,7 +12,7 @@ subdir('test')
 
 # Sources for main targets
 srcs = ['pwarPipeWire.c', '../protocol/pwar_router.c', '../protocol/pwar_rcv_buffer.c', '../protocol/latency_manager.c']
-#executable('pwar_torture', 'torture.c', include_directories: pwar_inc, dependencies: [pipewire_dep, math_dep], install: false)
+executable('pwar_torture', 'torture.c', include_directories: pwar_inc, dependencies: [pipewire_dep, math_dep], install: false)
 executable('windows_sim', ['windows_sim.c', '../protocol/pwar_router.c', '../protocol/pwar_rcv_buffer.c', '../protocol/latency_manager.c'], include_directories: pwar_inc, dependencies: [pipewire_dep, math_dep], install: false)
 
 libpwar = library(
