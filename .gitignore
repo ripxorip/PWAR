@@ -7,3 +7,4 @@ protocol/test/_out/
 .vscode/
 .direnv/
 .envrc
+result

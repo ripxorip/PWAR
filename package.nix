@@ -1,19 +1,25 @@
-{ pkgs ? import <nixpkgs> {}
-, lib ? pkgs.lib
-, stdenv ? pkgs.stdenv
-, cmake
-, ninja
-, pkg-config
-, pipewire
-, qt5
-, withGui ? true
+{
+  lib,
+  stdenv,
+  fetchFromGitHub,
+  cmake,
+  ninja,
+  pkg-config,
+  pipewire,
+  qt5,
+  withGui ? true,
 }:
 
 stdenv.mkDerivation rec {
   pname = "pwar";
   version = "0.1.0";
   
-  src = ./.;
+  src = fetchFromGitHub {
+    owner = "ripxorip";
+    repo = "PWAR";
+    rev = "v${version}";  # FIXME Tag a release
+    hash = "sha256-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=";
+  };
 
   nativeBuildInputs = [
     cmake
@@ -40,7 +46,6 @@ stdenv.mkDerivation rec {
     "-DCMAKE_INSTALL_RPATH=${placeholder "out"}/lib"
   ];
 
-  # Enable parallel building
   enableParallelBuilding = true;
 
   installPhase = ''
@@ -94,10 +99,10 @@ stdenv.mkDerivation rec {
       - libpwar.so: Shared library for audio processing
       ${lib.optionalString withGui "- pwar_gui: Qt-based graphical interface"}
     '';
-    homepage = "https://github.com/ripxorip/PWAR"; # Update with actual homepage
-    license = licenses.mit; # Update with actual license
-    maintainers = with maintainers; [ ]; # Add your maintainer entry when submitting
+    homepage = "https://github.com/ripxorip/PWAR";
+    license = licenses.mit; # Update with your actual license
+    maintainers = with maintainers; [ /* your-maintainer-handle */ ];
     platforms = platforms.linux;
-    mainProgram = "pwar_cli";
+    mainProgram = if withGui then "pwar_gui" else "pwar_cli";
   };
 }

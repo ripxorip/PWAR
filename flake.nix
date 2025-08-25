@@ -19,16 +19,21 @@
     flake-utils.lib.eachDefaultSystem (system:
 
     let
-
       pkgs = import nixpkgs {
         inherit system;
         overlays = [ ];
       };
-      pwarPkg = import ./default.nix { inherit pkgs; };
+      
+      # Main package (with GUI by default)
+      pwar = pkgs.callPackage ./default.nix { };
+      
+      # CLI-only variant for minimal installs
+      pwar-cli = pkgs.callPackage ./default.nix { withGui = false; };
 
     in
     {
       formatter = pkgs.nixpkgs-fmt;
+      
       devShell = pkgs.mkShell {
         buildInputs = with pkgs; [
           gcc
@@ -38,11 +43,29 @@
           pkg-config
           pipewire.dev
           qt5.full
+          qt5.wrapQtAppsHook
         ];
       };
-      packages.default = pwarPkg;
-      apps.default = flake-utils.lib.mkApp {
-        drv = pwarPkg;
+      
+      packages = {
+        default = pwar;
+        pwar = pwar;
+        pwar-cli = pwar-cli;
+      };
+      
+      apps = {
+        default = flake-utils.lib.mkApp {
+          drv = pwar;
+          name = "pwar_gui";
+        };
+        pwar = flake-utils.lib.mkApp {
+          drv = pwar;
+          name = "pwar_gui";
+        };
+        pwar-cli = flake-utils.lib.mkApp {
+          drv = pwar-cli;
+          name = "pwar_cli";
+        };
       };
     });
 }
