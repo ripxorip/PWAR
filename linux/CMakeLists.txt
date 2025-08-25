@@ -127,7 +127,17 @@ install(TARGETS pwar pwar_cli DESTINATION bin)
 if(Qt5_FOUND)
     install(TARGETS pwar_gui DESTINATION bin)
     install(FILES pwar_gui.qml DESTINATION share/pwar)
+    # Install desktop file
+    install(FILES pwar.desktop DESTINATION share/applications)
 endif()
 
-install(FILES ${CMAKE_SOURCE_DIR}/media/pwar_icon.png 
-        DESTINATION share/icons/hicolor/256x256/apps)
+# Install icon with proper naming convention
+install(FILES ${CMAKE_SOURCE_DIR}/media/pwar_icon_256x256.png 
+        DESTINATION share/icons/hicolor/256x256/apps
+        RENAME pwar.png)
+
+# Create a local install target for testing
+add_custom_target(install-local
+    COMMAND ${CMAKE_COMMAND} --install ${CMAKE_BINARY_DIR} --prefix ${CMAKE_SOURCE_DIR}/install
+    COMMENT "Installing to local directory for testing"
+)

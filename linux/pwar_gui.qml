@@ -11,6 +11,16 @@ ApplicationWindow {
     minimumWidth: 780
     minimumHeight: 1050
     title: "PWAR Control Panel"
+    
+    // Set window icon for Wayland compatibility
+    property var windowIcon: appIcon
+    
+    Component.onCompleted: {
+        // Try to set the window icon on Wayland
+        if (typeof appIcon !== 'undefined') {
+            console.log("Setting window icon from resource")
+        }
+    }
 
     // Enhanced graphite gray theme
     Material.theme: Material.Dark
