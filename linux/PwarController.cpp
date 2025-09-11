@@ -3,13 +3,14 @@
 #include <cstring>
 #include <QProcess>
 #include <QStandardPaths>
+#include "audio_backend.h"
 
 PwarController::PwarController(QObject *parent) 
     : QObject(parent), m_status("Ready"), m_initialized(false),
       m_audioProcMinMs(0.0), m_audioProcMaxMs(0.0), m_audioProcAvgMs(0.0),
       m_jitterMinMs(0.0), m_jitterMaxMs(0.0), m_jitterAvgMs(0.0),
       m_rttMinMs(0.0), m_rttMaxMs(0.0), m_rttAvgMs(0.0),
-      m_xruns(0), m_currentWindowsBufferSize(0) {
+      m_ringBufferAvgMs(0.0), m_xruns(0), m_currentWindowsBufferSize(0) {
     
     // Initialize QSettings with organization and application name
     m_settings = new QSettings("PWAR", "PwarController", this);
@@ -18,8 +19,18 @@ PwarController::PwarController(QObject *parent)
     strcpy(m_config.stream_ip, "192.168.66.3");
     m_config.stream_port = 8321;
     m_config.passthrough_test = 0;
-    m_config.oneshot_mode = 0;
-    m_config.buffer_size = 64;
+    m_config.device_buffer_size = 64;      // For GUI, keep device and windows packet same
+    m_config.windows_packet_size = 64;     // Same as device buffer for simplicity
+    m_config.ring_buffer_depth = 2048;
+    m_config.backend_type = AUDIO_BACKEND_PIPEWIRE;
+    
+    // Initialize audio config for PipeWire
+    m_config.audio_config.device_playback = nullptr;  // PipeWire uses NULL for auto-detection
+    m_config.audio_config.device_capture = nullptr;   // PipeWire uses NULL for auto-detection
+    m_config.audio_config.sample_rate = 48000;
+    m_config.audio_config.frames = 64;
+    m_config.audio_config.playback_channels = 2;
+    m_config.audio_config.capture_channels = 1;
     
     // Populate port lists
     updateInputPorts();
@@ -97,28 +108,32 @@ void PwarController::setPassthroughTest(bool enabled) {
     }
 }
 
-bool PwarController::oneshotMode() const {
-    return m_config.oneshot_mode;
-}
-
-void PwarController::setOneshotMode(bool enabled) {
-    if (m_config.oneshot_mode != enabled) {
-        m_config.oneshot_mode = enabled;
-        emit oneshotModeChanged();
-        applyRuntimeConfig();
-    }
-}
-
 int PwarController::bufferSize() const {
-    return m_config.buffer_size;
+    return m_config.device_buffer_size;  // Return device buffer size for GUI compatibility
 }
 
 void PwarController::setBufferSize(int size) {
-    if (m_config.buffer_size != size) {
-        m_config.buffer_size = size;
+    if (m_config.device_buffer_size != size) {
+        m_config.device_buffer_size = size;
+        m_config.windows_packet_size = size;  // Keep them the same for GUI simplicity
+        m_config.audio_config.frames = size;  // Keep audio config in sync
         emit bufferSizeChanged();
         if (pwar_is_running()) {
             setStatus("Buffer size changed - stop and start to apply");
+        }
+    }
+}
+
+int PwarController::ringBufferDepth() const {
+    return m_config.ring_buffer_depth;
+}
+
+void PwarController::setRingBufferDepth(int depth) {
+    if (m_config.ring_buffer_depth != depth) {
+        m_config.ring_buffer_depth = depth;
+        emit ringBufferDepthChanged();
+        if (pwar_is_running()) {
+            setStatus("Ring buffer depth changed - stop and start to apply");
         }
     }
 }
@@ -256,11 +271,11 @@ void PwarController::loadSettings() {
     bool savedPassthrough = m_settings->value("audio/passthroughTest", m_config.passthrough_test).toBool();
     setPassthroughTest(savedPassthrough);
     
-    bool savedOneshot = m_settings->value("audio/oneshotMode", m_config.oneshot_mode).toBool();
-    setOneshotMode(savedOneshot);
-    
-    int savedBufferSize = m_settings->value("audio/bufferSize", m_config.buffer_size).toInt();
+    int savedBufferSize = m_settings->value("audio/bufferSize", m_config.device_buffer_size).toInt();
     setBufferSize(savedBufferSize);
+    
+    int savedRingBufferDepth = m_settings->value("audio/ringBufferDepth", m_config.ring_buffer_depth).toInt();
+    setRingBufferDepth(savedRingBufferDepth);
     
     // Load port selections
     m_selectedInputPort = m_settings->value("audio/selectedInputPort", "").toString();
@@ -282,8 +297,8 @@ void PwarController::saveSettings() {
     
     // Save audio settings
     m_settings->setValue("audio/passthroughTest", passthroughTest());
-    m_settings->setValue("audio/oneshotMode", oneshotMode());
     m_settings->setValue("audio/bufferSize", bufferSize());
+    m_settings->setValue("audio/ringBufferDepth", ringBufferDepth());
     
     // Save port selections
     m_settings->setValue("audio/selectedInputPort", m_selectedInputPort);
@@ -405,6 +420,10 @@ double PwarController::rttAvgMs() const {
     return m_rttAvgMs;
 }
 
+double PwarController::ringBufferAvgMs() const {
+    return m_ringBufferAvgMs;
+}
+
 uint32_t PwarController::xruns() const {
     return m_xruns;
 }
@@ -423,34 +442,6 @@ void PwarController::updateLatencyMetrics() {
     
     bool changed = false;
     
-    // Update audio processing metrics
-    if (m_audioProcMinMs != metrics.audio_proc_min_ms) {
-        m_audioProcMinMs = metrics.audio_proc_min_ms;
-        changed = true;
-    }
-    if (m_audioProcMaxMs != metrics.audio_proc_max_ms) {
-        m_audioProcMaxMs = metrics.audio_proc_max_ms;
-        changed = true;
-    }
-    if (m_audioProcAvgMs != metrics.audio_proc_avg_ms) {
-        m_audioProcAvgMs = metrics.audio_proc_avg_ms;
-        changed = true;
-    }
-    
-    // Update jitter metrics
-    if (m_jitterMinMs != metrics.jitter_min_ms) {
-        m_jitterMinMs = metrics.jitter_min_ms;
-        changed = true;
-    }
-    if (m_jitterMaxMs != metrics.jitter_max_ms) {
-        m_jitterMaxMs = metrics.jitter_max_ms;
-        changed = true;
-    }
-    if (m_jitterAvgMs != metrics.jitter_avg_ms) {
-        m_jitterAvgMs = metrics.jitter_avg_ms;
-        changed = true;
-    }
-    
     // Update RTT metrics
     if (m_rttMinMs != metrics.rtt_min_ms) {
         m_rttMinMs = metrics.rtt_min_ms;
@@ -462,6 +453,12 @@ void PwarController::updateLatencyMetrics() {
     }
     if (m_rttAvgMs != metrics.rtt_avg_ms) {
         m_rttAvgMs = metrics.rtt_avg_ms;
+        changed = true;
+    }
+    
+    // Update ring buffer average
+    if (m_ringBufferAvgMs != metrics.ring_buffer_avg_ms) {
+        m_ringBufferAvgMs = metrics.ring_buffer_avg_ms;
         changed = true;
     }
     

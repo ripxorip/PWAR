@@ -3,6 +3,7 @@
 
 #include <stdint.h>
 #include "../protocol/pwar_latency_types.h"
+#include "audio_backend.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -14,8 +15,11 @@ typedef struct {
     char stream_ip[PWAR_MAX_IP_LEN];
     int stream_port;
     int passthrough_test;
-    int oneshot_mode;
-    int buffer_size;
+    int device_buffer_size;     // Audio device buffer size in frames (32/64/128 etc.)
+    int windows_packet_size;    // Windows packet buffer size in frames (64/128 etc.)
+    int ring_buffer_depth;      // Depth of the ring buffer for audio processing
+    audio_backend_type_t backend_type;
+    audio_config_t audio_config;
 } pwar_config_t;
 
 int pwar_cli_run(const pwar_config_t *config);

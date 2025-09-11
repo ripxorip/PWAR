@@ -180,7 +180,7 @@ ApplicationWindow {
                 ComboBox {
                     id: bufferSizeCombo
                     Layout.fillWidth: true
-                    model: [64, 128]
+                    model: [32, 64, 128]
                     currentIndex: {
                         var idx = model.indexOf(pwarController.bufferSize);
                         return idx >= 0 ? idx : 0;
@@ -193,14 +193,23 @@ ApplicationWindow {
                 }
 
                 Label { 
-                    text: "Oneshot Mode"
+                    text: "Ring Buffer Depth"
                     color: textPrimary
                     font.bold: true
                 }
-                CheckBox { 
-                    id: oneshotCheck
-                    checked: pwarController.oneshotMode
-                    onCheckedChanged: pwarController.oneshotMode = checked
+                ComboBox {
+                    id: ringBufferDepthCombo
+                    Layout.fillWidth: true
+                    model: [32, 64, 128, 256, 512, 1024, 2048, 4096, 8192]
+                    currentIndex: {
+                        var idx = model.indexOf(pwarController.ringBufferDepth);
+                        return idx >= 0 ? idx : 2; // default to 2048
+                    }
+                    onCurrentValueChanged: {
+                        if (currentValue !== pwarController.ringBufferDepth) {
+                            pwarController.ringBufferDepth = currentValue;
+                        }
+                    }
                 }
 
                 Label { 
@@ -436,29 +445,12 @@ ApplicationWindow {
                 }
 
                 Label { 
-                    text: "Audio Proc (ms)"
+                    text: "Ring Buffer Avg (ms)"
                     color: textPrimary
                     font.bold: true
                 }
                 Label { 
-                    text: Number(pwarController.audioProcMinMs || 0).toFixed(3) + "/" + 
-                          Number(pwarController.audioProcMaxMs || 0).toFixed(3) + "/" + 
-                          Number(pwarController.audioProcAvgMs || 0).toFixed(3)
-                    color: orangeAccent
-                    font.bold: true
-                    Layout.fillWidth: true
-                    Layout.leftMargin: statusValueLeftMargin
-                }
-
-                Label { 
-                    text: "Jitter (ms)"
-                    color: textPrimary
-                    font.bold: true
-                }
-                Label { 
-                    text: Number(pwarController.jitterMinMs || 0).toFixed(3) + "/" + 
-                          Number(pwarController.jitterMaxMs || 0).toFixed(3) + "/" + 
-                          Number(pwarController.jitterAvgMs || 0).toFixed(3)
+                    text: Number(pwarController.ringBufferAvgMs || 0).toFixed(3)
                     color: orangeAccent
                     font.bold: true
                     Layout.fillWidth: true
@@ -481,7 +473,7 @@ ApplicationWindow {
                 }
 
                 Label { 
-                    text: "XRUNS (last 2s)"
+                    text: "XRUNS"
                     color: textPrimary
                     font.bold: true
                 }
@@ -494,7 +486,7 @@ ApplicationWindow {
                 }
 
                 Label { 
-                    text: "ASIO Buffer Size"
+                    text: "Chunk Size"
                     color: textPrimary
                     font.bold: true
                 }

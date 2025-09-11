@@ -84,7 +84,7 @@ Download the Windows ASIO driver from the [releases page](https://github.com/rip
 3. **Configure settings** through the intuitive interface:
    - Set your Windows host IP address
    - Choose audio buffer size and sample rate
-   - Enable/disable oneshot mode and variable buffer sizes
+   - Enable/disable variable buffer sizes
 4. **Start the relay** with the click of a button
 
 ### Using the Command Line
@@ -105,7 +105,7 @@ Download the Windows ASIO driver from the [releases page](https://github.com/rip
 - ⚡ **Ultra-low latency**: Real-time, zero-drift audio streaming
 - 🔄 **Bidirectional audio**: Stream audio both ways between Windows and Linux
 - 🎛️ **Variable buffer sizes**: Runtime adjustment of buffer size and latency
-- 🎯 **Oneshot mode**: Optimized single-packet transmission for minimal latency
+
 - 🖥️ **Qt-based GUI**: Intuitive graphical interface for easy configuration
 - 💻 **CLI support**: Command-line interface for headless and scripted setups
 - 🪟 **ASIO driver**: Native Windows ASIO driver for maximum compatibility
@@ -133,7 +133,7 @@ Options:
   --ip IP_ADDRESS, -i IP_ADDRESS     Target Windows host IP address (default: 192.168.66.3)
   --port PORT, -p PORT               UDP port to use (default: 8321)
   --buffer_size SIZE, -b SIZE        Audio buffer size in frames (default: 64)
-  --oneshot                          Enable oneshot mode
+
   --passthrough_test, -pt            Enable passthrough test mode
 ```
 
@@ -141,8 +141,7 @@ Options:
 
 ## 🎛️ Key Features Explained
 
-### Oneshot Mode
-Oneshot mode optimizes for ultra-low latency by sending audio in single packets rather than streaming continuously. This significantly reduces latency but may increase CPU usage.
+
 
 ### Variable Buffer Sizes
 Allows runtime adjustment of buffer sizes to balance between latency and stability. Smaller buffers = lower latency but require more CPU and stable network.
@@ -220,7 +219,7 @@ Test binaries will be in `protocol/test/build/`.
 
 ### Common Issues
 - **No audio streaming**: Ensure both machines are on the same network and firewall allows UDP traffic on port 8321
-- **High latency**: Try enabling oneshot mode and reducing buffer sizes
+- **High latency**: Try reducing buffer sizes
 - **Audio dropouts**: Increase buffer size or check network stability
 - **ASIO driver not found**: Make sure you've registered the DLL with `regsvr32.exe`
 
@@ -228,7 +227,7 @@ Test binaries will be in `protocol/test/build/`.
 - Use wired network connections for best results
 - Match sample rates between Windows and Linux (48kHz recommended)
 - Close unnecessary applications to reduce CPU load
-- Consider using oneshot mode for minimal latency scenarios
+
 
 ---
 

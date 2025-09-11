@@ -17,188 +17,177 @@ typedef struct {
 } latency_stat_t;
 
 static struct {
-    uint64_t last_latency_info_sent; // Timestamp of the last latency info sent
+    uint64_t last_windows_recv;
+    uint64_t last_linux_recv;
 
-    uint64_t last_local_packet_timestamp; // Timestamp of the last packet processed
-    uint64_t last_remote_packet_timestamp; // Timestamp of the last remote packet processed
+    float expected_interval_ms;
+    uint32_t sample_rate;
 
-    // ----
-    uint64_t current_seq; // Current sequence number for packets
-    uint32_t current_index;
-    uint32_t num_packets; // Total number of packets in the current sequence
+    latency_stat_t rtt_stat;
+    latency_stat_t audio_proc_stat;
+    latency_stat_t windows_rcv_delta_stat;
+    latency_stat_t linux_rcv_delta_stat;
+    latency_stat_t ring_buffer_fill_level_stat;
 
-    uint64_t audio_ckb_start_timestamp; // Timestamp when the audio callback started
-    uint64_t audio_ckb_end_timestamp; // Timestamp when the audio callback ended
+    latency_stat_t rtt_stat_current;
+    latency_stat_t audio_proc_stat_current;
+    latency_stat_t windows_rcv_delta_stat_current;
+    latency_stat_t linux_rcv_delta_stat_current;
+    latency_stat_t ring_buffer_fill_level_stat_current;
 
-    // ----
-    latency_stat_t audio_proc; // Statistics for audio processing
-    latency_stat_t network_jitter; // Statistics for network jitter
-    latency_stat_t round_trip_time; // Statistics for round trip time
+    int64_t clock_offset_sum;
+    uint32_t clock_offset_count;
+    int64_t current_clock_offset;
 
-    uint32_t xruns_2sec; // Number of xruns in the last 2 seconds
-    uint32_t xruns;
+    float audio_backend_latency_ms;
+
+    uint64_t last_print_time;
 
 } internal = {0};
 
-void latency_manager_init() {
 
-}
-
-void latency_manager_start_audio_cbk_begin() {
-    internal.audio_ckb_start_timestamp = latency_manager_timestamp_now();
-}
-
-void latency_manager_start_audio_cbk_end() {
-    internal.audio_ckb_end_timestamp = latency_manager_timestamp_now();
-    // Calculate the duration of the audio callback
-    uint64_t duration = internal.audio_ckb_end_timestamp - internal.audio_ckb_start_timestamp;
-    internal.audio_proc.total += duration;
-    internal.audio_proc.count++;
-    if (duration < internal.audio_proc.min || internal.audio_proc.count == 1) {
-        internal.audio_proc.min = duration;
+static void process_latency_stat(latency_stat_t *stat, uint64_t value) {
+    if (stat->count == 0 || value < stat->min) {
+        stat->min = value;
     }
-    if (duration > internal.audio_proc.max || internal.audio_proc.count == 1) {
-        internal.audio_proc.max = duration;
+    if (stat->count == 0 || value > stat->max) {
+        stat->max = value;
     }
-}
-
-void latency_manager_process_packet_client(pwar_packet_t *packet) {
-    uint64_t packet_ts = packet->timestamp;
-    uint64_t nowNs = latency_manager_timestamp_now();
-
-    uint64_t time_since_last_local_packet = nowNs - internal.last_local_packet_timestamp;
-    internal.last_local_packet_timestamp = nowNs;
-
-    uint64_t audio_ckb_interval = packet_ts - internal.last_remote_packet_timestamp;
-    internal.last_remote_packet_timestamp = packet_ts;
-
-    // Jitter can be negative, log signed value
-    int64_t jitter = (int64_t)time_since_last_local_packet - (int64_t)audio_ckb_interval;
-    uint64_t abs_jitter = (jitter < 0) ? -jitter : jitter;
-    internal.network_jitter.total += abs_jitter;
-    internal.network_jitter.count++;
-    if (abs_jitter < internal.network_jitter.min || internal.network_jitter.count == 1) {
-        internal.network_jitter.min = abs_jitter;
-    }
-    if (abs_jitter > internal.network_jitter.max || internal.network_jitter.count == 1) {
-        internal.network_jitter.max = abs_jitter;
-    }
-}
-
-void latency_manager_process_packet_server(pwar_packet_t *packet) {
-    if (packet->packet_index == packet->num_packets - 1) {
-        uint64_t round_trip_time = latency_manager_timestamp_now() - packet->seq_timestamp;
-        internal.round_trip_time.total += round_trip_time;
-        internal.round_trip_time.count++;
-        if (round_trip_time < internal.round_trip_time.min || internal.round_trip_time.count == 1) {
-            internal.round_trip_time.min = round_trip_time;
-        }
-        if (round_trip_time > internal.round_trip_time.max || internal.round_trip_time.count == 1) {
-            internal.round_trip_time.max = round_trip_time;
-        }
-    }
+    stat->total += value;
+    stat->count++;
+    stat->avg = stat->total / stat->count;
 }
 
 
-int latency_manager_time_for_sending_latency_info(pwar_latency_info_t *latency_info) {
-    // Send latency info every 2 seconds
-    uint64_t now = latency_manager_timestamp_now();
-    if (now - internal.last_latency_info_sent >= 2 * 1000000000) {
-        internal.audio_proc.avg = (internal.audio_proc.count > 0) ? (internal.audio_proc.total / internal.audio_proc.count) : 0;
-        internal.network_jitter.avg = (internal.network_jitter.count > 0) ? (internal.network_jitter.total / internal.network_jitter.count) : 0;
-
-        // Fill in audio_proc stats
-        latency_info->audio_proc_avg = internal.audio_proc.avg;
-        latency_info->audio_proc_min = internal.audio_proc.min;
-        latency_info->audio_proc_max = internal.audio_proc.max;
-
-        // Reset audio_proc
-        internal.audio_proc.min = UINT64_MAX;
-        internal.audio_proc.max = 0;
-        internal.audio_proc.total = 0;
-        internal.audio_proc.count = 0;
-
-
-        // Fill in network jitter stats
-        latency_info->jitter_avg = internal.network_jitter.avg;
-        latency_info->jitter_min = internal.network_jitter.min;
-        latency_info->jitter_max = internal.network_jitter.max;
-
-        // Reset network jitter
-        internal.network_jitter.min = UINT64_MAX;
-        internal.network_jitter.max = 0;
-        internal.network_jitter.total = 0;
-        internal.network_jitter.count = 0;
-
-        internal.last_latency_info_sent = now;
-        return 1; // Indicate that latency info should be sent
-    }
-    return 0;
+void latency_manager_init(uint32_t sample_rate, uint32_t buffer_size, float audio_backend_latency_ms) {
+    internal.expected_interval_ms = (buffer_size / (float)sample_rate) * 1000.0f;
+    internal.sample_rate = sample_rate;
+    internal.audio_backend_latency_ms = audio_backend_latency_ms;
 }
 
-void latency_manager_handle_latency_info(pwar_latency_info_t *latency_info) {
-    // Print all stats as ms in one streamlined line
-    internal.round_trip_time.avg = (internal.round_trip_time.count > 0) ? (internal.round_trip_time.total / internal.round_trip_time.count) : 0;
-    printf("[PWAR]: AudioProc: min=%.3fms max=%.3fms avg=%.3fms | Jitter: min=%.3fms max=%.3fms avg=%.3fms | RTT: min=%.3fms max=%.3fms avg=%.3fms\n",
-        latency_info->audio_proc_min / 1000000.0,
-        latency_info->audio_proc_max / 1000000.0,
-        latency_info->audio_proc_avg / 1000000.0,
-        latency_info->jitter_min / 1000000.0,
-        latency_info->jitter_max / 1000000.0,
-        latency_info->jitter_avg / 1000000.0,
-        internal.round_trip_time.min / 1000000.0,
-        internal.round_trip_time.max / 1000000.0,
-        internal.round_trip_time.avg / 1000000.0);
 
-    internal.round_trip_time.min = UINT64_MAX;
-    internal.round_trip_time.max = 0;
-    internal.round_trip_time.total = 0;
-    internal.round_trip_time.count = 0;
-
-    internal.audio_proc.min = latency_info->audio_proc_min;
-    internal.audio_proc.max = latency_info->audio_proc_max;
-    internal.audio_proc.avg = latency_info->audio_proc_avg;
-
-    internal.network_jitter.min = latency_info->jitter_min;
-    internal.network_jitter.max = latency_info->jitter_max;
-    internal.network_jitter.avg = latency_info->jitter_avg;
-
-    internal.xruns_2sec = internal.xruns; // Store xruns for the last 2 seconds
-    internal.xruns = 0; // Reset xruns count
+void latency_manager_report_ring_buffer_fill_level(uint32_t fill_level) {
+    process_latency_stat(&internal.ring_buffer_fill_level_stat, fill_level);
 }
 
-void latency_manager_get_current_metrics(pwar_latency_metrics_t *metrics) {
-    if (!metrics) return;
+void calculate_windows_clock_offset(pwar_packet_t *packet) {
+   uint64_t estimated_rtt = internal.rtt_stat_current.avg;
     
-    // Calculate averages for current data
-    internal.audio_proc.avg = (internal.audio_proc.count > 0) ? (internal.audio_proc.total / internal.audio_proc.count) : 0;
-    internal.network_jitter.avg = (internal.network_jitter.count > 0) ? (internal.network_jitter.total / internal.network_jitter.count) : 0;
-    internal.round_trip_time.avg = (internal.round_trip_time.count > 0) ? (internal.round_trip_time.total / internal.round_trip_time.count) : 0;
+    // Method 1: Linux->Windows direction
+    // t2 should occur at approximately t1 + one_way_delay
+    int64_t offset1 = ((int64_t)packet->t1_linux_send + (int64_t)(estimated_rtt / 2)) - (int64_t)packet->t2_windows_recv;
     
-    // Convert from nanoseconds to milliseconds
-    metrics->audio_proc_min_ms = internal.audio_proc.min / 1000000.0;
-    metrics->audio_proc_max_ms = internal.audio_proc.max / 1000000.0;
-    metrics->audio_proc_avg_ms = internal.audio_proc.avg / 1000000.0;
+    // Method 2: Windows->Linux direction  
+    // t3 should occur at approximately t4 - one_way_delay
+    int64_t offset2 = ((int64_t)packet->t4_linux_recv - (int64_t)(estimated_rtt / 2)) - (int64_t)packet->t3_windows_send;
     
-    metrics->jitter_min_ms = internal.network_jitter.min / 1000000.0;
-    metrics->jitter_max_ms = internal.network_jitter.max / 1000000.0;
-    metrics->jitter_avg_ms = internal.network_jitter.avg / 1000000.0;
+    // Average the two estimates for better accuracy
+    int64_t combined_offset = (offset1 + offset2) / 2;
     
-    metrics->rtt_min_ms = internal.round_trip_time.min / 1000000.0;
-    metrics->rtt_max_ms = internal.round_trip_time.max / 1000000.0;
-    metrics->rtt_avg_ms = internal.round_trip_time.avg / 1000000.0;
+    internal.clock_offset_sum += combined_offset;
+    internal.clock_offset_count++;
+}
 
-    if (internal.xruns_2sec == 0) {
-        if (internal.xruns > 1000) internal.xruns = 1000;
-        metrics->xruns = internal.xruns; // No xruns in the last 2 seconds
-    } else {
-        metrics->xruns = internal.xruns_2sec; // Return the xruns count from the last 2 seconds
+uint64_t convert_windows_to_linux_time(uint64_t windows_time) {
+    return windows_time + internal.current_clock_offset;
+}
+
+void latency_manager_check_for_abnormalities(uint64_t rtt, pwar_packet_t *packet) {
+    float rtt_ms = rtt / 1000000.0f;
+    if (rtt_ms > internal.expected_interval_ms) {
+        float linux_to_windows = (packet->t2_windows_recv - packet->t1_linux_send) / 1000000.0f;
+        float windows_to_linux = (packet->t4_linux_recv - packet->t3_windows_send) / 1000000.0f;
+        printf("\033[33m[PWAR][Warning]: High RTT detected: %.2fms (Linux->Windows: %.2fms, Windows->Linux: %.2fms)\033[0m\n", rtt_ms, linux_to_windows, windows_to_linux);
     }
 }
 
+void latency_manager_process_packet(pwar_packet_t *packet) {
+    packet->t4_linux_recv = latency_manager_timestamp_now();
+    calculate_windows_clock_offset(packet);
 
-void latency_manager_report_xrun() {
-    internal.xruns++;
+    uint64_t rtt = packet->t4_linux_recv - packet->t1_linux_send;
+    uint64_t audio_proc = packet->t3_windows_send - packet->t2_windows_recv;
+
+    uint64_t windows_rcv_delta = packet->t2_windows_recv - internal.last_windows_recv;
+    uint64_t linux_rcv_delta = packet->t4_linux_recv - internal.last_linux_recv;
+
+    process_latency_stat(&internal.rtt_stat, rtt);
+    process_latency_stat(&internal.audio_proc_stat, audio_proc);
+    process_latency_stat(&internal.windows_rcv_delta_stat, windows_rcv_delta);
+    process_latency_stat(&internal.linux_rcv_delta_stat, linux_rcv_delta);
+
+    internal.last_windows_recv = packet->t2_windows_recv;
+    internal.last_linux_recv = packet->t4_linux_recv;
+
+    // Convert the clocks
+    packet->t2_windows_recv = convert_windows_to_linux_time(packet->t2_windows_recv);
+    packet->t3_windows_send = convert_windows_to_linux_time(packet->t3_windows_send);
+    latency_manager_check_for_abnormalities(rtt, packet);
+
+    // Print stats every 2 seconds
+    uint64_t current_time = latency_manager_timestamp_now();
+    if (internal.last_print_time == 0) {
+        internal.last_print_time = current_time;
+    }
+    
+    uint64_t time_since_print = current_time - internal.last_print_time;
+    if (time_since_print >= 2000000000ULL) { // 2 seconds in nanoseconds
+        printf("[PWAR]: Audio RTT: min=%.2fms avg=%.2fms max=%.2fms | Net RTT: min=%.2fms avg=%.2fms max=%.2fms | AudioProc: min=%.2fms avg=%.2fms max=%.2fms | WinJitter: min=%.2fms avg=%.2fms max=%.2fms | LinuxJitter: min=%.2fms avg=%.2fms max=%.2fms\n",
+               ((internal.ring_buffer_fill_level_stat.min / (float)internal.sample_rate) * 1000.0f) + internal.audio_backend_latency_ms,
+               ((internal.ring_buffer_fill_level_stat.avg / (float)internal.sample_rate) * 1000.0f) + internal.audio_backend_latency_ms,
+               ((internal.ring_buffer_fill_level_stat.max / (float)internal.sample_rate) * 1000.0f) + internal.audio_backend_latency_ms,
+               internal.rtt_stat.min / 1000000.0,
+               internal.rtt_stat.avg / 1000000.0,
+               internal.rtt_stat.max / 1000000.0,
+               internal.audio_proc_stat.min / 1000000.0,
+               internal.audio_proc_stat.avg / 1000000.0,
+               internal.audio_proc_stat.max / 1000000.0,
+               internal.windows_rcv_delta_stat.min / 1000000.0,
+               internal.windows_rcv_delta_stat.avg / 1000000.0,
+               internal.windows_rcv_delta_stat.max / 1000000.0,
+               internal.linux_rcv_delta_stat.min / 1000000.0,
+               internal.linux_rcv_delta_stat.avg / 1000000.0,
+               internal.linux_rcv_delta_stat.max / 1000000.0);
+
+        internal.ring_buffer_fill_level_stat_current = internal.ring_buffer_fill_level_stat;
+        internal.rtt_stat_current = internal.rtt_stat;
+        internal.audio_proc_stat_current = internal.audio_proc_stat;
+        internal.windows_rcv_delta_stat_current = internal.windows_rcv_delta_stat;
+        internal.linux_rcv_delta_stat_current = internal.linux_rcv_delta_stat;
+        
+        // Reset stats for next period
+        internal.rtt_stat = (latency_stat_t){0};
+        internal.audio_proc_stat = (latency_stat_t){0};
+        internal.windows_rcv_delta_stat = (latency_stat_t){0};
+        internal.linux_rcv_delta_stat = (latency_stat_t){0};
+        internal.ring_buffer_fill_level_stat = (latency_stat_t){0};
+
+        // Update current clock offset estimate
+        internal.current_clock_offset = internal.clock_offset_sum / (int64_t)internal.clock_offset_count;
+        internal.clock_offset_sum = 0;
+        internal.clock_offset_count = 0;
+
+        internal.last_print_time = current_time;
+    }
+}
+
+void latency_manger_get_current_metrics(pwar_latency_metrics_t *metrics) {
+    metrics->rtt_min_ms = internal.rtt_stat_current.min / 1000000.0;
+    metrics->rtt_max_ms = internal.rtt_stat_current.max / 1000000.0;
+    metrics->rtt_avg_ms = internal.rtt_stat_current.avg / 1000000.0;
+    metrics->audio_proc_min_ms = internal.audio_proc_stat_current.min / 1000000.0;
+    metrics->audio_proc_max_ms = internal.audio_proc_stat_current.max / 1000000.0;
+    metrics->audio_proc_avg_ms = internal.audio_proc_stat_current.avg / 1000000.0;
+    metrics->windows_jitter_min_ms = internal.windows_rcv_delta_stat_current.min / 1000000.0;
+    metrics->windows_jitter_max_ms = internal.windows_rcv_delta_stat_current.max / 1000000.0;
+    metrics->windows_jitter_avg_ms = internal.windows_rcv_delta_stat_current.avg / 1000000.0;   
+    metrics->linux_jitter_min_ms = internal.linux_rcv_delta_stat_current.min / 1000000.0;
+    metrics->linux_jitter_max_ms = internal.linux_rcv_delta_stat_current.max / 1000000.0;
+    metrics->linux_jitter_avg_ms = internal.linux_rcv_delta_stat_current.avg / 1000000.0;   
+    metrics->ring_buffer_min_ms = (internal.ring_buffer_fill_level_stat_current.min / (float)internal.sample_rate) * 1000.0f;
+    metrics->ring_buffer_max_ms = (internal.ring_buffer_fill_level_stat_current.max / (float)internal.sample_rate) * 1000.0f;
+    metrics->ring_buffer_avg_ms = (internal.ring_buffer_fill_level_stat_current.avg / (float)internal.sample_rate) * 1000.0f;
+    metrics->xruns = 0; // XRUNs tracking not implemented yet
 }
 
 uint64_t latency_manager_timestamp_now() {
