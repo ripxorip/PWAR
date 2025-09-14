@@ -22,8 +22,25 @@ add_library(PWARASIO SHARED ${PWARASIO_SOURCES})
 # Set output name to PWARASIO.dll
 set_target_properties(PWARASIO PROPERTIES OUTPUT_NAME "PWARASIO")
 
-# Add the .def file for proper symbol exports
-set_target_properties(PWARASIO PROPERTIES LINK_FLAGS "/DEF:${CMAKE_CURRENT_SOURCE_DIR}/pwarASIO.def")
+if (MSVC)
+    # # Add the .def file for proper symbol exports
+    set_target_properties(PWARASIO PROPERTIES LINK_FLAGS "/DEF:${CMAKE_CURRENT_SOURCE_DIR}/pwarASIO.def")
+else()
+    set_target_properties(PWARASIO PROPERTIES
+        PREFIX ""                       
+        OUTPUT_NAME "pwarASIO"          
+        WINDOWS_EXPORT_ALL_SYMBOLS FALSE
+    )
+
+    # explicit exports
+    set_property(TARGET PWARASIO PROPERTY
+        LINK_FLAGS "-Wl,--export-all-symbols -Wl,--add-stdcall-alias"
+    )
+
+    target_sources(PWARASIO PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/pwarASIO.rc)
+
+    target_link_libraries(PWARASIO PRIVATE ws2_32 avrt)
+endif()
 
 target_include_directories(PWARASIO PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}
@@ -34,8 +51,3 @@ target_compile_definitions(PWARASIO PRIVATE WIN32 _WINDOWS _CRT_SECURE_NO_DEPREC
 
 target_link_libraries(PWARASIO PRIVATE odbc32 odbccp32 winmm)
 
-add_custom_command(TARGET PWARASIO POST_BUILD
-    COMMAND ${CMAKE_COMMAND} -E copy_if_different
-        $<TARGET_FILE:PWARASIO>
-        Z:/music_production/PWAR/
-)
