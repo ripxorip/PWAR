@@ -12,7 +12,8 @@ extern "C" {
 
 typedef struct {
     char stream_ip[PWAR_MAX_IP_LEN];
-    int stream_port;
+    int connect_port;
+    int listen_port;
     int passthrough_test;
     int oneshot_mode;
     int buffer_size;

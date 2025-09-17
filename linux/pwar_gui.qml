@@ -306,7 +306,7 @@ ApplicationWindow {
                 }
 
                 Label { 
-                    text: "Port"
+                    text: "Connect Port"
                     color: textPrimary
                     font.bold: true
                 }
@@ -319,11 +319,58 @@ ApplicationWindow {
                     color: textPrimary
                     placeholderTextColor: textSecondary
                     selectByMouse: true
-                    text: pwarController.streamPort.toString()
+                    text: pwarController.connectPort.toString()
                     onTextChanged: {
                         var portNumber = parseInt(text);
-                        if (!isNaN(portNumber) && portNumber !== pwarController.streamPort) {
-                            pwarController.streamPort = portNumber;
+                        if (!isNaN(portNumber) && portNumber !== pwarController.connectPort) {
+                            pwarController.connectPort = portNumber;
+                        }
+                    }
+                    
+                    background: Rectangle {
+                        color: graphiteMedium
+                        radius: 4
+                        border.color: parent.activeFocus ? orangeAccent : (parent.hovered ? orangeHover : "#555555")
+                        border.width: parent.activeFocus ? 2 : 1
+                        
+                        Behavior on border.color { ColorAnimation { duration: 150 } }
+                        Behavior on border.width { NumberAnimation { duration: 150 } }
+                        
+                        // Subtle glow when focused
+                        Rectangle {
+                            anchors.fill: parent
+                            anchors.margins: -2
+                            radius: parent.radius + 2
+                            color: "transparent"
+                            border.color: orangeAccent
+                            border.width: parent.parent.activeFocus ? 1 : 0
+                            opacity: parent.parent.activeFocus ? 0.3 : 0
+                            
+                            Behavior on opacity { NumberAnimation { duration: 150 } }
+                            Behavior on border.width { NumberAnimation { duration: 150 } }
+                        }
+                    }
+                }
+
+                Label { 
+                    text: "Listen Port"
+                    color: textPrimary
+                    font.bold: true
+                }
+                TextField {
+                    id: listenPortField
+                    Layout.fillWidth: true
+                    placeholderText: "e.g. 5600"
+                    inputMethodHints: Qt.ImhDigitsOnly
+                    validator: IntValidator { bottom: 1; top: 65535 }
+                    color: textPrimary
+                    placeholderTextColor: textSecondary
+                    selectByMouse: true
+                    text: pwarController.listenPort.toString()
+                    onTextChanged: {
+                        var portNumber = parseInt(text);
+                        if (!isNaN(portNumber) && portNumber !== pwarController.listenPort) {
+                            pwarController.listenPort = portNumber;
                         }
                     }
                     

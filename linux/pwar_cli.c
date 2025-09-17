@@ -18,7 +18,7 @@ int main(int argc, char *argv[]) {
     pwar_config_t config;
     memset(&config, 0, sizeof(config));
     strncpy(config.stream_ip, DEFAULT_STREAM_IP, sizeof(config.stream_ip) - 1);
-    config.stream_port = DEFAULT_STREAM_PORT;
+    config.listen_port = config.connect_port = DEFAULT_STREAM_PORT;
     config.passthrough_test = 0;
     config.oneshot_mode = 0;
     config.buffer_size = DEFAULT_BUFFER_SIZE;
@@ -27,8 +27,10 @@ int main(int argc, char *argv[]) {
         if ((strcmp(argv[i], "--ip") == 0 || strcmp(argv[i], "-i") == 0) && i + 1 < argc) {
             strncpy(config.stream_ip, argv[++i], sizeof(config.stream_ip) - 1);
             config.stream_ip[sizeof(config.stream_ip) - 1] = '\0';
-        } else if ((strcmp(argv[i], "--port") == 0 || (strcmp(argv[i], "-p") == 0)) && i + 1 < argc) {
-            config.stream_port = atoi(argv[++i]);
+        } else if ((strcmp(argv[i], "--connect-port") == 0 || (strcmp(argv[i], "-p") == 0)) && i + 1 < argc) {
+            config.connect_port = atoi(argv[++i]);
+        } else if ((strcmp(argv[i], "--listen-port") == 0 || (strcmp(argv[i], "-l") == 0)) && i + 1 < argc) {
+            config.listen_port = atoi(argv[++i]);
         } else if ((strcmp(argv[i], "--passthrough_test") == 0) || (strcmp(argv[i], "-pt") == 0)) {
             config.passthrough_test = 1;
         } else if ((strcmp(argv[i], "--oneshot") == 0)) {
@@ -40,7 +42,7 @@ int main(int argc, char *argv[]) {
 
     printf("Starting PWAR with config:\n");
     printf("  Stream IP: %s\n", config.stream_ip);
-    printf("  Stream Port: %d\n", config.stream_port);
+    printf("  Stream Port: %d\n", config.connect_port);
     printf("  Passthrough Test: %s\n", config.passthrough_test ? "Enabled" : "Disabled");
     printf("  Oneshot Mode: %s\n", config.oneshot_mode ? "Enabled" : "Disabled");
     printf("  Buffer Size: %d\n", config.buffer_size);

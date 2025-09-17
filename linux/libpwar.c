@@ -302,8 +302,8 @@ static void *pipewire_thread_func(void *userdata) {
 static int init_data_structure(struct data *data, const pwar_config_t *config) {
     memset(data, 0, sizeof(struct data));
     
-    setup_socket(data, config->stream_ip, config->stream_port);
-    setup_recv_socket(data, DEFAULT_STREAM_PORT);
+    setup_socket(data, config->stream_ip, config->connect_port);
+    setup_recv_socket(data, config->listen_port);
     pthread_mutex_init(&data->packet_mutex, NULL);
     pthread_cond_init(&data->packet_cond, NULL);
     data->packet_available = 0;
@@ -382,7 +382,7 @@ static int create_pipewire_filter(struct data *data) {
 int pwar_requires_restart(const pwar_config_t *old_config, const pwar_config_t *new_config) {
     if (old_config->buffer_size != new_config->buffer_size ||
         strcmp(old_config->stream_ip, new_config->stream_ip) != 0 ||
-        old_config->stream_port != new_config->stream_port) {
+        old_config->connect_port != new_config->connect_port) {
         return 1;
     }
     return 0;
