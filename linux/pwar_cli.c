@@ -14,6 +14,16 @@
 #define DEFAULT_STREAM_PORT 8321
 #define DEFAULT_BUFFER_SIZE 64
 
+void print_help(char *binary_name) {
+  printf("usage: %s OPTIONS\n", binary_name);
+  printf("Available options:\n");
+  printf("\t-i,\t --ip\t NUMBER\n");
+  printf("\t-p,\t  --port\t NUMBER\n");
+  printf("\t-pt,\t --passthrough_test\n");
+  printf("\t-b,\t  --buffer_size\t NUMBER\n");
+  printf("\t--oneshot\n");
+}
+
 int main(int argc, char *argv[]) {
     pwar_config_t config;
     memset(&config, 0, sizeof(config));
@@ -35,6 +45,10 @@ int main(int argc, char *argv[]) {
             config.oneshot_mode = 1;
         } else if ((strcmp(argv[i], "--buffer_size") == 0 || strcmp(argv[i], "-b") == 0) && i + 1 < argc) {
             config.buffer_size = atoi(argv[++i]);
+        } else {
+            printf("invalid option: %s\n", argv[i]);
+            print_help(argv[0]);
+            exit(-1);
         }
     }
 
