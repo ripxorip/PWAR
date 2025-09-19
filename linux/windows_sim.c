@@ -49,6 +49,7 @@ static void setup_recv_socket(int port) {
     recv_addr.sin_family = AF_INET;
     recv_addr.sin_addr.s_addr = INADDR_ANY;
     recv_addr.sin_port = htons(port);
+    printf("about to bind on local port %d...\n", port);
     if (bind(recv_sockfd, (struct sockaddr *)&recv_addr, sizeof(recv_addr)) < 0) {
         perror("recv socket bind failed");
         exit(EXIT_FAILURE);

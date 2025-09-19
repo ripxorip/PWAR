@@ -16,7 +16,8 @@ PwarController::PwarController(QObject *parent)
     
     // Initialize default config
     strcpy(m_config.stream_ip, "192.168.66.3");
-    m_config.stream_port = 8321;
+    m_config.connect_port = 8321;
+    m_config.listen_port = 8321;
     m_config.passthrough_test = 0;
     m_config.oneshot_mode = 0;
     m_config.buffer_size = 64;
@@ -71,14 +72,28 @@ void PwarController::setStreamIp(const QString &ip) {
     }
 }
 
-int PwarController::streamPort() const {
-    return m_config.stream_port;
+int PwarController::connectPort() const {
+    return m_config.connect_port;
 }
 
-void PwarController::setStreamPort(int port) {
-    if (m_config.stream_port != port) {
-        m_config.stream_port = port;
-        emit streamPortChanged();
+void PwarController::setConnectPort(int port) {
+    if (m_config.connect_port != port) {
+        m_config.connect_port = port;
+        emit connectPortChanged();
+        if (pwar_is_running()) {
+            setStatus("Port changed - stop and start to apply");
+        }
+    }
+}
+
+int PwarController::listenPort() const {
+    return m_config.listen_port;
+}
+
+void PwarController::setListenPort(int port) {
+    if (m_config.listen_port != port) {
+        m_config.listen_port = port;
+        emit listenPortChanged();
         if (pwar_is_running()) {
             setStatus("Port changed - stop and start to apply");
         }
@@ -249,8 +264,8 @@ void PwarController::loadSettings() {
     QString savedIp = m_settings->value("network/streamIp", QString(m_config.stream_ip)).toString();
     setStreamIp(savedIp);
     
-    int savedPort = m_settings->value("network/streamPort", m_config.stream_port).toInt();
-    setStreamPort(savedPort);
+    int savedPort = m_settings->value("network/connectPort", m_config.connect_port).toInt();
+    setConnectPort(savedPort);
     
     // Load audio settings
     bool savedPassthrough = m_settings->value("audio/passthroughTest", m_config.passthrough_test).toBool();
@@ -278,7 +293,7 @@ void PwarController::saveSettings() {
     
     // Save network settings
     m_settings->setValue("network/streamIp", streamIp());
-    m_settings->setValue("network/streamPort", streamPort());
+    m_settings->setValue("network/connectPort", connectPort());
     
     // Save audio settings
     m_settings->setValue("audio/passthroughTest", passthroughTest());
