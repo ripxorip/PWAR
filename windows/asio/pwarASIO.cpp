@@ -660,6 +660,8 @@ void pwarASIO::parseConfigFile() {
             if (key == "udp_send_ip") {
                 udpSendIp = value;
                 pwarASIOLog::Send("Read ip from config");
+            } else if (key == "buffer_size") {
+                setBufferSize(atoi(value.c_str()));
             }
         }
     }
