@@ -174,12 +174,12 @@ The GUI provides live feedback on:
    ```
 
 #### 🛠️ Building the ASIO Driver
-3. Install [CMake](https://cmake.org/download/) and a supported compiler (e.g., Visual Studio).
+3. Install [CMake](https://cmake.org/download/) and a supported compiler (e.g., Visual Studio or MinGW).
 4. Open a terminal and run:
    ```powershell
    mkdir build
    cd build
-   cmake .. -G "Visual Studio 17 2022" # or your version
+   cmake .. -G "Visual Studio 17 2022" # or "MingGW Makefiles"
    cmake --build . --config Release
    ```
 5. The ASIO driver DLL will be in `build/windows/asio/PWARASIO.dll`.

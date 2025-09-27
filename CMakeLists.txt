@@ -19,7 +19,6 @@ if(WIN32)
 else()
     # Linux-specific targets
     add_subdirectory(linux)
-    
     # Protocol tests (Linux only - tests not needed on Windows)
     add_subdirectory(protocol/test)
 endif()

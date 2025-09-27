@@ -57,7 +57,7 @@ STDMETHODIMP pwarASIO::NonDelegatingQueryInterface(REFIID riid, void** ppv) {
 extern LONG RegisterAsioDriver(CLSID, char*, char*, char*, char*);
 extern LONG UnregisterAsioDriver(CLSID, char*, char*);
 
-HRESULT _stdcall DllRegisterServer() {
+extern "C"  __declspec(dllexport) HRESULT _stdcall DllRegisterServer() {
     LONG rc = RegisterAsioDriver(IID_ASIO_DRIVER, "PWARASIO.dll", "PWAR ASIO Driver", "PWAR ASIO", "Apartment");
     if (rc) {
         char errstr[128] = {0};
@@ -68,7 +68,7 @@ HRESULT _stdcall DllRegisterServer() {
     return S_OK;
 }
 
-HRESULT _stdcall DllUnregisterServer() {
+extern "C"  __declspec(dllexport) HRESULT _stdcall DllUnregisterServer() {
     LONG rc = UnregisterAsioDriver(IID_ASIO_DRIVER, "PWARASIO.dll", "PWAR ASIO Driver");
     if (rc) {
         char errstr[128] = {0};
@@ -77,7 +77,7 @@ HRESULT _stdcall DllUnregisterServer() {
         return -1;
     }
     return S_OK;
-}
+}	
 
 pwarASIO::pwarASIO(LPUNKNOWN pUnk, HRESULT* phr)
     : CUnknown("PWARASIO", pUnk, phr),
