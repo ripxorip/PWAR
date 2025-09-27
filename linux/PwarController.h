@@ -11,8 +11,8 @@ class PwarController : public QObject {
     Q_PROPERTY(QString streamIp READ streamIp WRITE setStreamIp NOTIFY streamIpChanged)
     Q_PROPERTY(int streamPort READ streamPort WRITE setStreamPort NOTIFY streamPortChanged)
     Q_PROPERTY(bool passthroughTest READ passthroughTest WRITE setPassthroughTest NOTIFY passthroughTestChanged)
-    Q_PROPERTY(bool oneshotMode READ oneshotMode WRITE setOneshotMode NOTIFY oneshotModeChanged)
     Q_PROPERTY(int bufferSize READ bufferSize WRITE setBufferSize NOTIFY bufferSizeChanged)
+    Q_PROPERTY(int ringBufferDepth READ ringBufferDepth WRITE setRingBufferDepth NOTIFY ringBufferDepthChanged)
     Q_PROPERTY(QStringList outputPorts READ outputPorts NOTIFY outputPortsChanged)
     Q_PROPERTY(QStringList inputPorts READ inputPorts NOTIFY inputPortsChanged)
     Q_PROPERTY(QString selectedInputPort READ selectedInputPort WRITE setSelectedInputPort NOTIFY selectedInputPortChanged)
@@ -29,6 +29,7 @@ class PwarController : public QObject {
     Q_PROPERTY(double rttMinMs READ rttMinMs NOTIFY latencyMetricsChanged)
     Q_PROPERTY(double rttMaxMs READ rttMaxMs NOTIFY latencyMetricsChanged)
     Q_PROPERTY(double rttAvgMs READ rttAvgMs NOTIFY latencyMetricsChanged)
+    Q_PROPERTY(double ringBufferAvgMs READ ringBufferAvgMs NOTIFY latencyMetricsChanged)
     Q_PROPERTY(uint32_t xruns READ xruns NOTIFY latencyMetricsChanged)
     
     // Current Windows buffer size property
@@ -48,10 +49,10 @@ public:
     void setStreamPort(int port);
     bool passthroughTest() const;
     void setPassthroughTest(bool enabled);
-    bool oneshotMode() const;
-    void setOneshotMode(bool enabled);
     int bufferSize() const;
     void setBufferSize(int size);
+    int ringBufferDepth() const;
+    void setRingBufferDepth(int depth);
 
     QStringList outputPorts() const;
     QStringList inputPorts() const;
@@ -80,6 +81,7 @@ public:
     double rttMinMs() const;
     double rttMaxMs() const;
     double rttAvgMs() const;
+    double ringBufferAvgMs() const;
     uint32_t xruns() const;
     
     // Current Windows buffer size getter
@@ -93,8 +95,8 @@ signals:
     void streamIpChanged();
     void streamPortChanged();
     void passthroughTestChanged();
-    void oneshotModeChanged();
     void bufferSizeChanged();
+    void ringBufferDepthChanged();
     void outputPortsChanged();
     void inputPortsChanged();
     void selectedInputPortChanged();
@@ -128,6 +130,7 @@ private:
     double m_rttMinMs;
     double m_rttMaxMs;
     double m_rttAvgMs;
+    double m_ringBufferAvgMs;
     uint32_t m_xruns;
     QTimer *m_latencyUpdateTimer;
     
