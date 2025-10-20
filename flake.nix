@@ -44,6 +44,7 @@
           pipewire.dev
           qt5.full
           qt5.wrapQtAppsHook
+          qt5.qtgraphicaleffects
           # Package building tools
           nfpm
           gnumake
